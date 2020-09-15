@@ -1,0 +1,58 @@
+!go_package "calculator"
+
+/// Operand is a value to operate on
+message Operand {
+    /// The value to operate on
+    value: int
+}
+
+/// Result is the result of a request
+message Result {
+    value: int
+}
+
+/// Empty is used for methods with no arguments
+message Empty {
+}
+
+/// Tag is used to identify a memorized value
+message Tag {
+    /// The name of the stored memory
+    name: string
+}
+
+/// Memory is a memorized value
+message Memory {
+    /// The name of the stored memory
+    name: string
+    /// The time the memory was created
+    at: time
+    /// The value of the memory
+    value: int
+}
+
+/// Memories is a list of memorized values
+message Memories {
+    /// The list of stored memories
+    items: list[Memory]
+}
+
+/// Calculator is a calculation service
+service Calculator {
+    /// Adds the argument to the current value
+    add[Operand]: Result
+    /// Subtracts the argument from the current value
+    subtract[Operand]: Result
+    /// Multiplies the current value by the argument
+    multiply[Operand]: Result
+    /// Divides the current value by the argument
+    divide[Operand]: Result
+    /// Reads the current value
+    read[Empty]: Result
+    /// Resets the current value to 0
+    reset[Empty]: Result
+    /// memorize stores the current value with a tag to identify it later
+    memorize[Tag]: Memory
+    /// memory_dump lists all items currently in memory
+    memory_dump[Empty]: Memories
+}

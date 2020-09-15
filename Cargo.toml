@@ -1,0 +1,11 @@
+[package]
+name = "til"
+version = "0.1.0"
+authors = ["Andrew Smith <andy@robotlovesyou.com>"]
+edition = "2018"
+publish = ["git"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+unicode-segmentation = "1.6.0"
