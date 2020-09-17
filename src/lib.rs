@@ -1,10 +1,170 @@
-// pub mod lexer;
-// pub mod source;
-// pub mod token;
+mod token {
+    use std::fmt::Display;
+
+    #[derive(Copy, Clone)]
+    pub enum Type {
+        // Literal Types
+        StringLiteral,
+        IntLiteral,
+        FloatLiteral,
+        BoolLiteral,
+        // Comment Types
+        DocComment,
+        // Punctuation
+        Bang,
+        Colon,
+        QMark,
+        LBrace,
+        RBrace,
+        LBracket,
+        RBracket,
+        LParen,
+        RParen,
+        At,
+        // Keywords
+        MessageKeyword,
+        ListKeyword,
+        MapKeyword,
+        ServiceKeyword,
+        FloatKeyword,
+        IntKeyword,
+        BoolKeyword,
+        StringKeyword,
+        TimeKeyword,
+        //Whitespace
+        LineFeed,
+        EOF,
+    }
+
+    pub trait Token {
+        fn ttype(&self) -> Type;
+        fn repr(&self) -> String;
+        fn line(&self) -> u32;
+        fn column(&self) -> u32;
+    }
+
+    pub struct LiteralToken<T> {
+        ttype: Type,
+        formatter: Box<dyn Fn(&T) -> String>,
+        value: T,
+        line: u32,
+        column: u32,
+    }
+
+    impl<T> Token for LiteralToken<T> {
+        fn ttype(&self) -> Type {
+            self.ttype
+        }
+
+        fn repr(&self) -> String {
+            (self.formatter)(&self.value)
+        }
+
+        fn line(&self) -> u32 {
+            self.line
+        }
+
+        fn column(&self) -> u32 {
+            self.column
+        }
+    }
+
+    macro_rules! literal_token_constructor {
+        ($struct_name:ident, $type_name:ty, $ttype_name:path, $formatter:expr) => {
+            fn new(value: $type_name, line: u32, column: u32) -> $struct_name {
+                $struct_name {
+                    ttype: $ttype_name,
+                    value,
+                    formatter: Box::new($formatter),
+                    line,
+                    column,
+                }
+            }
+        };
+    }
+
+    macro_rules! literal_value_function {
+        ($type_name:ty) => {
+            fn value(&self) -> $type_name {
+                self.value
+            }
+        }
+    }
+
+    macro_rules! literal_token_decl_and_impl {
+        ($struct_name:ident, $type_name:ty, $ttype_name:path) => {
+            type $struct_name = LiteralToken<$type_name>;
+
+            impl $struct_name {
+                literal_token_constructor!($struct_name, $type_name, $ttype_name, |v: &$type_name| {format!("{}", v)});
+                literal_value_function!($type_name);
+            }
+        }
+    }
+
+    type StringLiteralToken = LiteralToken<String>;
+
+    impl StringLiteralToken {
+        literal_token_constructor!(
+            StringLiteralToken,
+            String,
+            Type::StringLiteral,
+            |v: &String| { format!("\"{}\"", v) }
+        );
+
+        fn value(&self) -> &str {
+            &self.value
+        }
+    }
+
+    literal_token_decl_and_impl!(IntLiteralToken, i64, Type::IntLiteral);
+
+    literal_token_decl_and_impl!(FloatLiteralToken, f64, Type::FloatLiteral);
+
+    literal_token_decl_and_impl!(BoolLiteralToken, bool, Type::BoolLiteral);
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+
+        #[test]
+        fn string_literal_token_properties_return_correct_values() {
+            let str_lit = StringLiteralToken::new("Hello".to_string(), 1, 2);
+            assert_eq!("Hello", str_lit.value());
+            assert_eq!("\"Hello\"", str_lit.repr());
+            assert_eq!(1, str_lit.line(), "line has the wrong value");
+            assert_eq!(2, str_lit.column(), "column has the wrong value");
+        }
+
+        #[test]
+        fn int_literal_token_properties_return_correct_values() {
+            let int_lit = IntLiteralToken::new(123, 1, 2);
+            assert_eq!(123, int_lit.value());
+            assert_eq!(1, int_lit.line(), "line has wrong value");
+            assert_eq!(2, int_lit.column(), "column has wrong value");
+        }
+
+        #[test]
+        fn float_literal_token_properties_return_correct_values() {
+            let float_lit = FloatLiteralToken::new(123.456, 1, 2);
+            assert_eq!(123.456, float_lit.value());
+            assert_eq!(1, float_lit.line(), "line has wrong value");
+            assert_eq!(2, float_lit.column(), "column has wrong value");
+        }
+
+        #[test]
+        fn bool_literal_token_properties_return_correct_values() {
+            let bool_lit = BoolLiteralToken::new(true, 1, 2);
+            assert_eq!(true, bool_lit.value());
+            assert_eq!(1, bool_lit.line(), "line has wrong value");
+            assert_eq!(2, bool_lit.column(), "column has wrong value");
+        }
+    }
+}
 
 mod source_segmentation {
     use crate::source_cluster::SourceCluster;
-    use unicode_segmentation::{UnicodeSegmentation, Graphemes};
+    use unicode_segmentation::{Graphemes, UnicodeSegmentation};
 
     /// Container for an iterator over source segments
     pub struct SourceSegments<'a> {
@@ -13,7 +173,7 @@ mod source_segmentation {
         graphemes: Graphemes<'a>,
     }
 
-    impl SourceSegments <'_> {
+    impl SourceSegments<'_> {
         /// construct a new SourceSegments
         pub fn new(source: &str) -> SourceSegments {
             SourceSegments {
@@ -24,29 +184,35 @@ mod source_segmentation {
         }
     }
 
-    impl Iterator for SourceSegments <'_> {
+    impl Iterator for SourceSegments<'_> {
         type Item = SourceCluster;
 
         fn next(&mut self) -> Option<Self::Item> {
-            if let Some(cluster) = self.graphemes.next() {
-                // normalise \r\n to \n
-                let normalise_newline = |gc| {
-                    if gc == "\r\n" {"\n"} else {gc}
-                };
+            // normalise \r\n to \n
+            let normalise_newline = |gc| {
+                if gc == "\r\n" {
+                    "\n"
+                } else {
+                    gc
+                }
+            };
 
-                let result = SourceCluster::new(normalise_newline(cluster).to_string(), self.line, self.column);
+            self.graphemes.next().map(|cluster| {
+                let result = SourceCluster::new(
+                    normalise_newline(cluster).to_string(),
+                    self.line,
+                    self.column,
+                );
 
                 if result.is_newline() {
                     self.line += 1;
                     self.column = 1;
                 } else {
-                    self.column +=1;
+                    self.column += 1;
                 }
 
-                Some(result)
-            } else {
-                None
-            }
+                result
+            })
         }
     }
 
@@ -74,7 +240,10 @@ mod source_segmentation {
         #[test]
         fn source_segments_returns_an_iterator_over_the_source_grapheme_clusters() {
             let source = "Mary had a little lamb.";
-            assert_eq!(source.source_clusters().count(), source.graphemes(true).count());
+            assert_eq!(
+                source.source_clusters().count(),
+                source.graphemes(true).count()
+            );
         }
 
         #[test]
@@ -85,7 +254,12 @@ mod source_segmentation {
             let test_item = |sc: SourceCluster, el: u32, ec: u32, egc: &str| {
                 assert_eq!(el, sc.line(), "wrong line for cluster {:?}", sc);
                 assert_eq!(ec, sc.column(), "wrong column for cluster {:?}", sc);
-                assert_eq!(sc.grapheme_cluster(), egc, "wrong grapheme cluster for cluster {:?}", sc);
+                assert_eq!(
+                    sc.grapheme_cluster(),
+                    egc,
+                    "wrong grapheme cluster for cluster {:?}",
+                    sc
+                );
             };
 
             test_item(iter.next().expect("no cluster for 'a'"), 1, 1, "a");
@@ -96,7 +270,6 @@ mod source_segmentation {
             test_item(iter.next().expect("no cluster for '\n' 2"), 2, 3, "\n");
             test_item(iter.next().expect("no cluster for 'நி'"), 3, 1, "நி");
         }
-
     }
 }
 
@@ -125,18 +298,32 @@ mod source_cluster {
         pub fn new(source: String, line: u32, column: u32) -> SourceCluster {
             // only test the first char of the grapheme cluster.
             // uses take(1).fold(...) so that empty clusters have no characteristics
-            let unicode_characteristics: u8 = source.chars().take(1).fold(0u8, |mut acc, c|{
-                if c.is_alphabetic() {acc |= ALPHA_MASK};
-                if c.is_alphanumeric() {acc |= ALPHANUMERIC_MASK};
-                if c.is_digit(10) {acc |= DIGIT_MASK};
-                if c.is_lowercase() {acc |= LOWERCASE_MASK};
-                if c.is_uppercase() {acc |= UPPERCASE_MASK};
-                if c.is_whitespace() {acc |= WHITESPACE_MASK};
-                if c == '\n' {acc |= NEWLINE_MASK};
+            let unicode_characteristics: u8 = source.chars().take(1).fold(0u8, |mut acc, c| {
+                if c.is_alphabetic() {
+                    acc |= ALPHA_MASK
+                };
+                if c.is_alphanumeric() {
+                    acc |= ALPHANUMERIC_MASK
+                };
+                if c.is_digit(10) {
+                    acc |= DIGIT_MASK
+                };
+                if c.is_lowercase() {
+                    acc |= LOWERCASE_MASK
+                };
+                if c.is_uppercase() {
+                    acc |= UPPERCASE_MASK
+                };
+                if c.is_whitespace() {
+                    acc |= WHITESPACE_MASK
+                };
+                if c == '\n' {
+                    acc |= NEWLINE_MASK
+                };
                 acc
             });
 
-            SourceCluster{
+            SourceCluster {
                 grapheme_cluster: Rc::new(source),
                 column,
                 line,
@@ -312,14 +499,5 @@ mod source_cluster {
         fn grapheme_cluster_returns_the_grapheme_cluster() {
             assert_eq!(test_cluster("a").grapheme_cluster(), "a");
         }
-    }
-
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }
