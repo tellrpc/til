@@ -1,7 +1,140 @@
+mod lexer {
+    use std::convert;
+    use std::error;
+    use std::fmt;
+    use std::iter;
+    use std::num;
+    use std::result;
+    use crate::token;
+    use crate::source_cluster;
+    use crate::source_segmentation;
+    use crate::source_segmentation::SourceSegmentation;
+    use std::num::ParseIntError;
+    use std::error::Error;
+
+
+    #[derive(Debug)]
+    struct LexerError {
+        reason: String,
+    }
+
+    impl convert::From<num::ParseIntError> for LexerError {
+        fn from(e: ParseIntError) -> Self {
+            LexerError::new(e.to_string())
+        }
+    }
+
+    impl LexerError {
+        fn new(reason: String) -> LexerError {
+            LexerError {
+                reason,
+            }
+        }
+    }
+
+    impl fmt::Display for LexerError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "LexerError: {}", self.reason)
+        }
+    }
+
+    impl error::Error for LexerError {}
+
+    type Result = result::Result<Box<dyn token::Token>, LexerError>;
+
+    struct Lexer<'a> {
+        source: &'a str,
+        segments: iter::Peekable<source_segmentation::SourceSegments<'a>>,
+    }
+
+    impl Lexer<'_> {
+        fn consume_next(&mut self) -> result::Result<source_cluster::SourceCluster, LexerError> {
+            if let Some(sc) = self.segments.next() {
+                Ok(sc)
+            } else {
+                Err(LexerError::new("unexpected EOF in segment stream".to_string()))
+            }
+        }
+        fn numeric_literal(&mut self, cl: source_cluster::SourceCluster) -> Result {
+            let mut repr = cl.cluster().to_string();
+            while let Some(peeked) = self.segments.next() {
+                match peeked {
+                    pk if pk.is_base10_digit() => {
+                        let sc = self.consume_next()?;
+                        repr += sc.cluster();
+                    },
+                    pk if pk.cluster() == "." => {
+                        self.consume_next()?;
+                        repr += ".";
+                        return self.float_literal(cl, repr);
+                    }
+                    _ => break,
+                }
+            }
+
+            let val = repr.parse::<i64>()?;
+            Ok(Box::new(token::IntLiteralToken::new(val, cl.line(), cl.column())))
+        }
+
+        fn float_literal(&mut self, cl: source_cluster::SourceCluster, mut repr: String) -> Result {
+            unimplemented!()
+        }
+    }
+
+    impl Iterator for Lexer<'_> {
+        type Item = Result;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            while let Some(cluster) = self.segments.next() {
+                let maybe_result = match cluster {
+                    cl if cl.is_base10_digit() => Some(self.numeric_literal(cl)),
+                    cl => Some(Err(LexerError::new(format!("Unexpected character: {}", cl.cluster()))))
+                };
+
+                // if maybe_result is none, then we do not wish to emit the result of this loop
+                // and should continue
+                if let Some(result) = maybe_result {
+                    return Some(result);
+                }
+            }
+            None
+        }
+    }
+
+    trait Lexing {
+        fn lex(&self) -> Lexer;
+    }
+
+    impl Lexing for &str {
+        fn lex(&self) -> Lexer {
+            Lexer {
+                source: self,
+                segments: self.source_clusters().peekable(),
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+        use crate::token::*;
+
+        #[test]
+        fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
+            let tkn = "123".lex().next().expect("no token")?;
+            assert_eq!(Type::IntLiteral, tkn.ttype());
+            Ok(())
+        }
+
+        // TODO test for negative integers (and fix the implementation to support them)
+        // TODO test floats and negative floats.
+    }
+}
+
 mod token {
     use std::fmt::Display;
 
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     pub enum Type {
         // Literal Types
         StringLiteral,
@@ -69,9 +202,11 @@ mod token {
         }
     }
 
+    /// creates a new function for a literal token
     macro_rules! literal_token_constructor {
         ($struct_name:ident, $type_name:ty, $ttype_name:path, $formatter:expr) => {
-            fn new(value: $type_name, line: u32, column: u32) -> $struct_name {
+            /// construct a new $struct_name
+            pub fn new(value: $type_name, line: u32, column: u32) -> $struct_name {
                 $struct_name {
                     ttype: $ttype_name,
                     value,
@@ -83,17 +218,21 @@ mod token {
         };
     }
 
+    /// creates a value function for a literal token
     macro_rules! literal_value_function {
         ($type_name:ty) => {
-            fn value(&self) -> $type_name {
+            /// get the literal value
+            pub fn value(&self) -> $type_name {
                 self.value
             }
         }
     }
 
+    /// declares and implements a LiteralToken type.
     macro_rules! literal_token_decl_and_impl {
         ($struct_name:ident, $type_name:ty, $ttype_name:path) => {
-            type $struct_name = LiteralToken<$type_name>;
+            /// A LiteralToken for the $type_name primitive and the $ttype_name token
+            pub type $struct_name = LiteralToken<$type_name>;
 
             impl $struct_name {
                 literal_token_constructor!($struct_name, $type_name, $ttype_name, |v: &$type_name| {format!("{}", v)});
@@ -102,8 +241,11 @@ mod token {
         }
     }
 
-    type StringLiteralToken = LiteralToken<String>;
+    /// A token for string literals
+    pub type StringLiteralToken = LiteralToken<String>;
 
+    /// String literal token has a slightly different implementation to the other literal token types
+    /// and the compiler seems unable to differentiate between them, so string literal is defined here
     impl StringLiteralToken {
         literal_token_constructor!(
             StringLiteralToken,
@@ -112,7 +254,7 @@ mod token {
             |v: &String| { format!("\"{}\"", v) }
         );
 
-        fn value(&self) -> &str {
+        pub fn value(&self) -> &str {
             &self.value
         }
     }
@@ -329,6 +471,10 @@ mod source_cluster {
                 line,
                 unicode_characteristics,
             }
+        }
+
+        pub(crate) fn cluster(&self) -> &str {
+            &self.grapheme_cluster
         }
 
         #[inline]
