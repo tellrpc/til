@@ -40,7 +40,7 @@ mod lexer {
 
     impl error::Error for LexerError {}
 
-    type Result = result::Result<Box<dyn token::Token>, LexerError>;
+    type Result = result::Result<token::Token, LexerError>;
 
     struct Lexer<'a> {
         source: &'a str,
@@ -57,7 +57,7 @@ mod lexer {
         }
         fn numeric_literal(&mut self, cl: source_cluster::SourceCluster) -> Result {
             let mut repr = cl.cluster().to_string();
-            while let Some(peeked) = self.segments.next() {
+            while let Some(peeked) = self.segments.peek() {
                 match peeked {
                     pk if pk.is_base10_digit() => {
                         let sc = self.consume_next()?;
@@ -73,7 +73,7 @@ mod lexer {
             }
 
             let val = repr.parse::<i64>()?;
-            Ok(Box::new(token::IntLiteralToken::new(val, cl.line(), cl.column())))
+            Ok(token::Token::IntLiteral(token::IntLiteralToken::new(val, cl.line(), cl.column())))
         }
 
         fn float_literal(&mut self, cl: source_cluster::SourceCluster, mut repr: String) -> Result {
@@ -121,8 +121,15 @@ mod lexer {
 
         #[test]
         fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
-            let tkn = "123".lex().next().expect("no token")?;
-            assert_eq!(Type::IntLiteral, tkn.ttype());
+            match "123".lex().next().expect("no token")? {
+                token::Token::IntLiteral(tkn) => {
+                    assert_eq!(123, tkn.value());
+                    assert_eq!(1, tkn.line());
+                    assert_eq!(1, tkn.column());
+                },
+                _ => panic!("not an IntLiteral"),
+            }
+
             Ok(())
         }
 
@@ -132,83 +139,53 @@ mod lexer {
 }
 
 mod token {
-    use std::fmt::Display;
+    use std::fmt;
+    use std::fmt::{Display, Debug, Formatter};
 
-    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-    pub enum Type {
-        // Literal Types
-        StringLiteral,
-        IntLiteral,
-        FloatLiteral,
-        BoolLiteral,
-        // Comment Types
-        DocComment,
-        // Punctuation
-        Bang,
-        Colon,
-        QMark,
-        LBrace,
-        RBrace,
-        LBracket,
-        RBracket,
-        LParen,
-        RParen,
-        At,
-        // Keywords
-        MessageKeyword,
-        ListKeyword,
-        MapKeyword,
-        ServiceKeyword,
-        FloatKeyword,
-        IntKeyword,
-        BoolKeyword,
-        StringKeyword,
-        TimeKeyword,
-        //Whitespace
-        LineFeed,
-        EOF,
-    }
-
-    pub trait Token {
-        fn ttype(&self) -> Type;
-        fn repr(&self) -> String;
-        fn line(&self) -> u32;
-        fn column(&self) -> u32;
-    }
-
-    pub struct LiteralToken<T> {
-        ttype: Type,
+    pub struct LiteralToken<T: Display> {
         formatter: Box<dyn Fn(&T) -> String>,
         value: T,
         line: u32,
         column: u32,
     }
 
-    impl<T> Token for LiteralToken<T> {
-        fn ttype(&self) -> Type {
-            self.ttype
+    impl<T: Display> Display for LiteralToken<T> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "LiteralToken{{value: {}, line: {}, column: {}}}", self.value, self.line, self.column)
         }
+    }
 
-        fn repr(&self) -> String {
+    impl<T: Debug + Display> Debug for LiteralToken<T> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            f.debug_struct("LiteralToken")
+                .field("value", &self.value)
+                .field("line", &self.line)
+                .field("column", &self.column)
+                .finish()
+        }
+    }
+
+    impl<T: Display> LiteralToken<T> {
+
+        pub fn repr(&self) -> String {
             (self.formatter)(&self.value)
         }
 
-        fn line(&self) -> u32 {
+        pub fn line(&self) -> u32 {
             self.line
         }
 
-        fn column(&self) -> u32 {
+        pub fn column(&self) -> u32 {
             self.column
         }
     }
 
     /// creates a new function for a literal token
     macro_rules! literal_token_constructor {
-        ($struct_name:ident, $type_name:ty, $ttype_name:path, $formatter:expr) => {
+        ($struct_name:ident, $type_name:ty, $formatter:expr) => {
             /// construct a new $struct_name
             pub fn new(value: $type_name, line: u32, column: u32) -> $struct_name {
                 $struct_name {
-                    ttype: $ttype_name,
                     value,
                     formatter: Box::new($formatter),
                     line,
@@ -230,12 +207,12 @@ mod token {
 
     /// declares and implements a LiteralToken type.
     macro_rules! literal_token_decl_and_impl {
-        ($struct_name:ident, $type_name:ty, $ttype_name:path) => {
+        ($struct_name:ident, $type_name:ty) => {
             /// A LiteralToken for the $type_name primitive and the $ttype_name token
             pub type $struct_name = LiteralToken<$type_name>;
 
             impl $struct_name {
-                literal_token_constructor!($struct_name, $type_name, $ttype_name, |v: &$type_name| {format!("{}", v)});
+                literal_token_constructor!($struct_name, $type_name, |v: &$type_name| {format!("{}", v)});
                 literal_value_function!($type_name);
             }
         }
@@ -250,7 +227,6 @@ mod token {
         literal_token_constructor!(
             StringLiteralToken,
             String,
-            Type::StringLiteral,
             |v: &String| { format!("\"{}\"", v) }
         );
 
@@ -259,11 +235,46 @@ mod token {
         }
     }
 
-    literal_token_decl_and_impl!(IntLiteralToken, i64, Type::IntLiteral);
+    literal_token_decl_and_impl!(IntLiteralToken, i64);
 
-    literal_token_decl_and_impl!(FloatLiteralToken, f64, Type::FloatLiteral);
+    literal_token_decl_and_impl!(FloatLiteralToken, f64);
 
-    literal_token_decl_and_impl!(BoolLiteralToken, bool, Type::BoolLiteral);
+    literal_token_decl_and_impl!(BoolLiteralToken, bool);
+
+    #[derive(Debug)]
+    pub enum Token {
+        // Literal Types
+        StringLiteral(StringLiteralToken),
+        IntLiteral(IntLiteralToken),
+        FloatLiteral(FloatLiteralToken),
+        BoolLiteral(BoolLiteralToken),
+        // Comment Types
+        // DocComment,
+        // // Punctuation
+        // Bang,
+        // Colon,
+        // QMark,
+        // LBrace,
+        // RBrace,
+        // LBracket,
+        // RBracket,
+        // LParen,
+        // RParen,
+        // At,
+        // // Keywords
+        // MessageKeyword,
+        // ListKeyword,
+        // MapKeyword,
+        // ServiceKeyword,
+        // FloatKeyword,
+        // IntKeyword,
+        // BoolKeyword,
+        // StringKeyword,
+        // TimeKeyword,
+        // //Whitespace
+        // LineFeed,
+        // EOF,
+    }
 
     #[cfg(test)]
     mod test {
