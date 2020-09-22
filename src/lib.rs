@@ -5,11 +5,10 @@ mod lexer {
     use std::iter;
     use std::num;
     use std::result;
-    use crate::token;
-    use crate::source_cluster;
-    use crate::source_segmentation;
-    use crate::source_segmentation::SourceSegmentation;
-    use std::num::ParseIntError;
+    use crate::token::{Token, IntLiteralToken, FloatLiteralToken};
+    use crate::source_cluster::SourceCluster;
+    use crate::source_segmentation::{SourceSegmentation, SourceSegments};
+    use std::num::{ParseIntError, ParseFloatError};
     use std::error::Error;
 
 
@@ -18,8 +17,14 @@ mod lexer {
         reason: String,
     }
 
-    impl convert::From<num::ParseIntError> for LexerError {
+    impl convert::From<ParseIntError> for LexerError {
         fn from(e: ParseIntError) -> Self {
+            LexerError::new(e.to_string())
+        }
+    }
+
+    impl convert::From<ParseFloatError> for LexerError {
+        fn from(e: ParseFloatError) -> Self {
             LexerError::new(e.to_string())
         }
     }
@@ -40,22 +45,22 @@ mod lexer {
 
     impl error::Error for LexerError {}
 
-    type Result = result::Result<token::Token, LexerError>;
+    type Result = result::Result<Token, LexerError>;
 
     struct Lexer<'a> {
         source: &'a str,
-        segments: iter::Peekable<source_segmentation::SourceSegments<'a>>,
+        segments: iter::Peekable<SourceSegments<'a>>,
     }
 
     impl Lexer<'_> {
-        fn consume_next(&mut self) -> result::Result<source_cluster::SourceCluster, LexerError> {
+        fn consume_next(&mut self) -> result::Result<SourceCluster, LexerError> {
             if let Some(sc) = self.segments.next() {
                 Ok(sc)
             } else {
                 Err(LexerError::new("unexpected EOF in segment stream".to_string()))
             }
         }
-        fn numeric_literal(&mut self, cl: source_cluster::SourceCluster) -> Result {
+        fn numeric_literal(&mut self, cl: SourceCluster) -> Result {
             let mut repr = cl.cluster().to_string();
             while let Some(peeked) = self.segments.peek() {
                 match peeked {
@@ -73,11 +78,21 @@ mod lexer {
             }
 
             let val = repr.parse::<i64>()?;
-            Ok(token::Token::IntLiteral(token::IntLiteralToken::new(val, cl.line(), cl.column())))
+            Ok(Token::IntLiteral(IntLiteralToken::new(val, cl.line(), cl.column())))
         }
 
-        fn float_literal(&mut self, cl: source_cluster::SourceCluster, mut repr: String) -> Result {
-            unimplemented!()
+        fn float_literal(&mut self, cl: SourceCluster, mut repr: String) -> Result {
+            while let Some(peeked) = self.segments.peek() {
+                match peeked {
+                    pk if pk.is_base10_digit() => {
+                        let sc = self.consume_next()?;
+                        repr += sc.cluster();
+                    }
+                    _ => break,
+                }
+            }
+            let val = repr.parse::<f64>()?;
+            Ok(Token::FloatLiteral(FloatLiteralToken::new(val, cl.line(), cl.column())))
         }
     }
 
@@ -87,7 +102,7 @@ mod lexer {
         fn next(&mut self) -> Option<Self::Item> {
             while let Some(cluster) = self.segments.next() {
                 let maybe_result = match cluster {
-                    cl if cl.is_base10_digit() => Some(self.numeric_literal(cl)),
+                    cl if cl.is_base10_digit() || cl.cluster() == "-" => Some(self.numeric_literal(cl)),
                     cl => Some(Err(LexerError::new(format!("Unexpected character: {}", cl.cluster()))))
                 };
 
@@ -118,11 +133,12 @@ mod lexer {
     mod test {
         use super::*;
         use crate::token::*;
+        use assert_approx_eq::assert_approx_eq;
 
         #[test]
         fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
             match "123".lex().next().expect("no token")? {
-                token::Token::IntLiteral(tkn) => {
+                Token::IntLiteral(tkn) => {
                     assert_eq!(123, tkn.value());
                     assert_eq!(1, tkn.line());
                     assert_eq!(1, tkn.column());
@@ -133,8 +149,47 @@ mod lexer {
             Ok(())
         }
 
-        // TODO test for negative integers (and fix the implementation to support them)
-        // TODO test floats and negative floats.
+        #[test]
+        fn emits_a_negative_int_literal_token() -> result::Result<(), LexerError> {
+            match "-123".lex().next().expect("no token")? {
+                Token::IntLiteral(tkn) => {
+                    assert_eq!(-123, tkn.value());
+                    assert_eq!(1, tkn.line());
+                    assert_eq!(1, tkn.column());
+                },
+                _ => panic!("not an IntLiteral"),
+            }
+
+            Ok(())
+        }
+
+        #[test]
+        fn emits_a_float_literal_token() -> result::Result<(), LexerError> {
+            match "123.456".lex().next().expect("no token")? {
+                Token::FloatLiteral(tkn) => {
+                    assert_approx_eq!(123.456, tkn.value());
+                    assert_eq!(1, tkn.line());
+                    assert_eq!(1, tkn.column());
+                },
+                _ => panic!("not a float literal")
+            }
+
+            Ok(())
+        }
+
+        #[test]
+        fn emits_a_negative_float_literal_token() -> result::Result<(), LexerError> {
+            match "-123.456".lex().next().expect("no token")? {
+                Token::FloatLiteral(tkn) => {
+                    assert_approx_eq!(-123.456, tkn.value());
+                    assert_eq!(1, tkn.line());
+                    assert_eq!(1, tkn.column());
+                },
+                _ => panic!("not a float literal")
+            }
+
+            Ok(())
+        }
     }
 }
 
@@ -179,6 +234,12 @@ mod token {
             self.column
         }
     }
+
+    // TODO: refactor to remove the macros by making LiteralToken<T> into LiteralToken<T, U>
+    // TODO: where T is the literal type and U is the type returned by a value function.
+    // TODO: The value function can be provided as a closure, the same way as the formatter function.
+    // TODO: Provide a factory function to construct each type, and a type declaration for each type
+
 
     /// creates a new function for a literal token
     macro_rules! literal_token_constructor {

@@ -9,3 +9,6 @@ publish = ["git"]
 
 [dependencies]
 unicode-segmentation = "1.6.0"
+
+[dev-dependencies]
+assert_approx_eq = "1.1.0"
