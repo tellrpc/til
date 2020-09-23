@@ -1,16 +1,15 @@
 mod lexer {
+    use crate::source_cluster::SourceCluster;
+    use crate::source_segmentation::{SourceSegmentation, SourceSegments};
+    use crate::token::{AsLocation, FloatLiteralToken, IntLiteralToken, Token};
     use std::convert;
     use std::error;
+    use std::error::Error;
     use std::fmt;
     use std::iter;
     use std::num;
+    use std::num::{ParseFloatError, ParseIntError};
     use std::result;
-    use crate::token::{AsLocation, Token, IntLiteralToken, FloatLiteralToken};
-    use crate::source_cluster::SourceCluster;
-    use crate::source_segmentation::{SourceSegmentation, SourceSegments};
-    use std::num::{ParseIntError, ParseFloatError};
-    use std::error::Error;
-
 
     #[derive(Debug)]
     struct LexerError {
@@ -31,9 +30,7 @@ mod lexer {
 
     impl LexerError {
         fn new(reason: String) -> LexerError {
-            LexerError {
-                reason,
-            }
+            LexerError { reason }
         }
     }
 
@@ -57,7 +54,9 @@ mod lexer {
             if let Some(sc) = self.segments.next() {
                 Ok(sc)
             } else {
-                Err(LexerError::new("unexpected EOF in segment stream".to_string()))
+                Err(LexerError::new(
+                    "unexpected EOF in segment stream".to_string(),
+                ))
             }
         }
         fn numeric_literal(&mut self, cl: SourceCluster) -> Result {
@@ -78,7 +77,11 @@ mod lexer {
             }
 
             let val = repr.parse::<i64>()?;
-            Ok(Token::IntLiteral(IntLiteralToken::new(val, cl.line(), cl.column())))
+            Ok(Token::IntLiteral(IntLiteralToken::new(
+                val,
+                cl.line(),
+                cl.column(),
+            )))
         }
 
         fn float_literal(&mut self, cl: SourceCluster, mut repr: String) -> Result {
@@ -92,7 +95,11 @@ mod lexer {
                 }
             }
             let val = repr.parse::<f64>()?;
-            Ok(Token::FloatLiteral(FloatLiteralToken::new(val, cl.line(), cl.column())))
+            Ok(Token::FloatLiteral(FloatLiteralToken::new(
+                val,
+                cl.line(),
+                cl.column(),
+            )))
         }
     }
 
@@ -102,8 +109,13 @@ mod lexer {
         fn next(&mut self) -> Option<Self::Item> {
             while let Some(cluster) = self.segments.next() {
                 let maybe_result = match cluster {
-                    cl if cl.is_base10_digit() || cl.cluster() == "-" => Some(self.numeric_literal(cl)),
-                    cl => Some(Err(LexerError::new(format!("Unexpected character: {}", cl.cluster()))))
+                    cl if cl.is_base10_digit() || cl.cluster() == "-" => {
+                        Some(self.numeric_literal(cl))
+                    }
+                    cl => Some(Err(LexerError::new(format!(
+                        "Unexpected character: {}",
+                        cl.cluster()
+                    )))),
                 };
 
                 // if maybe_result is none, then we do not wish to emit the result of this loop
@@ -171,7 +183,7 @@ mod lexer {
                     assert_eq!(1, tkn.as_location().line());
                     assert_eq!(1, tkn.as_location().column());
                 }
-                _ => panic!("not a float literal")
+                _ => panic!("not a float literal"),
             }
 
             Ok(())
@@ -185,7 +197,7 @@ mod lexer {
                     assert_eq!(1, tkn.as_location().line());
                     assert_eq!(1, tkn.as_location().column());
                 }
-                _ => panic!("not a float literal")
+                _ => panic!("not a float literal"),
             }
 
             Ok(())
@@ -195,7 +207,7 @@ mod lexer {
 
 mod token {
     use std::fmt;
-    use std::fmt::{Display, Debug, Formatter};
+    use std::fmt::{Debug, Display, Formatter};
 
     #[derive(Debug)]
     pub struct Location {
@@ -230,12 +242,15 @@ mod token {
     #[derive(Debug)]
     pub struct StringLiteralToken {
         value: String,
-        location: Location
+        location: Location,
     }
 
     impl StringLiteralToken {
         pub fn new(value: String, line: u32, column: u32) -> StringLiteralToken {
-            StringLiteralToken { value, location: Location { line, column } }
+            StringLiteralToken {
+                value,
+                location: Location { line, column },
+            }
         }
 
         pub fn value(&self) -> &str {
@@ -261,12 +276,11 @@ mod token {
         location: Location,
     }
 
-
     impl<T: Debug + Display + Copy> LiteralToken<T> {
         pub fn new(value: T, line: u32, column: u32) -> LiteralToken<T> {
             LiteralToken {
                 value,
-                location: Location { line, column }
+                location: Location { line, column },
             }
         }
 
@@ -274,22 +288,24 @@ mod token {
             format!("{}", self.value)
         }
 
-        pub fn value(&self) -> T { self.value }
+        pub fn value(&self) -> T {
+            self.value
+        }
     }
 
-    impl <T: Debug + Display + Copy> Display for LiteralToken<T> {
+    impl<T: Debug + Display + Copy> Display for LiteralToken<T> {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
             write!(f, "{}", self.value)
         }
     }
 
-    impl <T: Debug + Display + Copy> AsLocation for LiteralToken<T> {
+    impl<T: Debug + Display + Copy> AsLocation for LiteralToken<T> {
         fn as_location(&self) -> &Location {
             &self.location
         }
     }
 
-    impl <T: Debug + Display + Copy> Representation for LiteralToken<T> {
+    impl<T: Debug + Display + Copy> Representation for LiteralToken<T> {
         fn repr(&self) -> String {
             format!("{}", self.value)
         }
@@ -297,7 +313,7 @@ mod token {
 
     pub type IntLiteralToken = LiteralToken<i64>;
     pub type FloatLiteralToken = LiteralToken<f64>;
-    pub type BoolLiteralToken  = LiteralToken<bool>;
+    pub type BoolLiteralToken = LiteralToken<bool>;
 
     #[derive(Debug)]
     pub enum Token {
@@ -345,7 +361,11 @@ mod token {
             assert_eq!("Hello", str_lit.value());
             assert_eq!("\"Hello\"", str_lit.repr());
             assert_eq!(1, str_lit.as_location().line(), "line has the wrong value");
-            assert_eq!(2, str_lit.as_location().column(), "column has the wrong value");
+            assert_eq!(
+                2,
+                str_lit.as_location().column(),
+                "column has the wrong value"
+            );
         }
 
         #[test]
@@ -363,7 +383,11 @@ mod token {
             assert_approx_eq!(123.456, float_lit.value());
             assert_eq!("123.456", float_lit.repr());
             assert_eq!(1, float_lit.as_location().line(), "line has wrong value");
-            assert_eq!(2, float_lit.as_location().column(), "column has wrong value");
+            assert_eq!(
+                2,
+                float_lit.as_location().column(),
+                "column has wrong value"
+            );
         }
 
         #[test]
@@ -413,11 +437,7 @@ mod source_segmentation {
             };
 
             self.graphemes.next().map(|cluster| {
-                let result = SourceCluster::new(
-                    normalise_newline(cluster),
-                    self.line,
-                    self.column,
-                );
+                let result = SourceCluster::new(normalise_newline(cluster), self.line, self.column);
 
                 if result.is_newline() {
                     self.line += 1;
