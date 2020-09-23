@@ -5,7 +5,7 @@ mod lexer {
     use std::iter;
     use std::num;
     use std::result;
-    use crate::token::{Token, IntLiteralToken, FloatLiteralToken};
+    use crate::token::{AsLocation, Token, IntLiteralToken, FloatLiteralToken};
     use crate::source_cluster::SourceCluster;
     use crate::source_segmentation::{SourceSegmentation, SourceSegments};
     use std::num::{ParseIntError, ParseFloatError};
@@ -67,7 +67,7 @@ mod lexer {
                     pk if pk.is_base10_digit() => {
                         let sc = self.consume_next()?;
                         repr += sc.cluster();
-                    },
+                    }
                     pk if pk.cluster() == "." => {
                         self.consume_next()?;
                         repr += ".";
@@ -140,9 +140,9 @@ mod lexer {
             match "123".lex().next().expect("no token")? {
                 Token::IntLiteral(tkn) => {
                     assert_eq!(123, tkn.value());
-                    assert_eq!(1, tkn.line());
-                    assert_eq!(1, tkn.column());
-                },
+                    assert_eq!(1, tkn.as_location().line());
+                    assert_eq!(1, tkn.as_location().column());
+                }
                 _ => panic!("not an IntLiteral"),
             }
 
@@ -154,9 +154,9 @@ mod lexer {
             match "-123".lex().next().expect("no token")? {
                 Token::IntLiteral(tkn) => {
                     assert_eq!(-123, tkn.value());
-                    assert_eq!(1, tkn.line());
-                    assert_eq!(1, tkn.column());
-                },
+                    assert_eq!(1, tkn.as_location().line());
+                    assert_eq!(1, tkn.as_location().column());
+                }
                 _ => panic!("not an IntLiteral"),
             }
 
@@ -168,9 +168,9 @@ mod lexer {
             match "123.456".lex().next().expect("no token")? {
                 Token::FloatLiteral(tkn) => {
                     assert_approx_eq!(123.456, tkn.value());
-                    assert_eq!(1, tkn.line());
-                    assert_eq!(1, tkn.column());
-                },
+                    assert_eq!(1, tkn.as_location().line());
+                    assert_eq!(1, tkn.as_location().column());
+                }
                 _ => panic!("not a float literal")
             }
 
@@ -182,9 +182,9 @@ mod lexer {
             match "-123.456".lex().next().expect("no token")? {
                 Token::FloatLiteral(tkn) => {
                     assert_approx_eq!(-123.456, tkn.value());
-                    assert_eq!(1, tkn.line());
-                    assert_eq!(1, tkn.column());
-                },
+                    assert_eq!(1, tkn.as_location().line());
+                    assert_eq!(1, tkn.as_location().column());
+                }
                 _ => panic!("not a float literal")
             }
 
@@ -197,35 +197,13 @@ mod token {
     use std::fmt;
     use std::fmt::{Display, Debug, Formatter};
 
-    pub struct LiteralToken<T: Display> {
-        formatter: Box<dyn Fn(&T) -> String>,
-        value: T,
+    #[derive(Debug)]
+    pub struct Location {
         line: u32,
         column: u32,
     }
 
-    impl<T: Display> Display for LiteralToken<T> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            write!(f, "LiteralToken{{value: {}, line: {}, column: {}}}", self.value, self.line, self.column)
-        }
-    }
-
-    impl<T: Debug + Display> Debug for LiteralToken<T> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            f.debug_struct("LiteralToken")
-                .field("value", &self.value)
-                .field("line", &self.line)
-                .field("column", &self.column)
-                .finish()
-        }
-    }
-
-    impl<T: Display> LiteralToken<T> {
-
-        pub fn repr(&self) -> String {
-            (self.formatter)(&self.value)
-        }
-
+    impl Location {
         pub fn line(&self) -> u32 {
             self.line
         }
@@ -235,72 +213,91 @@ mod token {
         }
     }
 
-    // TODO: refactor to remove the macros by making LiteralToken<T> into LiteralToken<T, U>
-    // TODO: where T is the literal type and U is the type returned by a value function.
-    // TODO: The value function can be provided as a closure, the same way as the formatter function.
-    // TODO: Provide a factory function to construct each type, and a type declaration for each type
-
-
-    /// creates a new function for a literal token
-    macro_rules! literal_token_constructor {
-        ($struct_name:ident, $type_name:ty, $formatter:expr) => {
-            /// construct a new $struct_name
-            pub fn new(value: $type_name, line: u32, column: u32) -> $struct_name {
-                $struct_name {
-                    value,
-                    formatter: Box::new($formatter),
-                    line,
-                    column,
-                }
-            }
-        };
-    }
-
-    /// creates a value function for a literal token
-    macro_rules! literal_value_function {
-        ($type_name:ty) => {
-            /// get the literal value
-            pub fn value(&self) -> $type_name {
-                self.value
-            }
+    impl Display for Location {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "(line: {}, column: {})", self.line, self.column)
         }
     }
 
-    /// declares and implements a LiteralToken type.
-    macro_rules! literal_token_decl_and_impl {
-        ($struct_name:ident, $type_name:ty) => {
-            /// A LiteralToken for the $type_name primitive and the $ttype_name token
-            pub type $struct_name = LiteralToken<$type_name>;
-
-            impl $struct_name {
-                literal_token_constructor!($struct_name, $type_name, |v: &$type_name| {format!("{}", v)});
-                literal_value_function!($type_name);
-            }
-        }
+    pub trait AsLocation {
+        fn as_location(&self) -> &Location;
     }
 
-    /// A token for string literals
-    pub type StringLiteralToken = LiteralToken<String>;
+    pub trait Representation {
+        fn repr(&self) -> String;
+    }
 
-    /// String literal token has a slightly different implementation to the other literal token types
-    /// and the compiler seems unable to differentiate between them, so string literal is defined here
+    #[derive(Debug)]
+    pub struct StringLiteralToken {
+        value: String,
+        location: Location
+    }
+
     impl StringLiteralToken {
-        literal_token_constructor!(
-            StringLiteralToken,
-            String,
-            |v: &String| { format!("\"{}\"", v) }
-        );
+        pub fn new(value: String, line: u32, column: u32) -> StringLiteralToken {
+            StringLiteralToken { value, location: Location { line, column } }
+        }
 
         pub fn value(&self) -> &str {
             &self.value
         }
     }
 
-    literal_token_decl_and_impl!(IntLiteralToken, i64);
+    impl AsLocation for StringLiteralToken {
+        fn as_location(&self) -> &Location {
+            &self.location
+        }
+    }
 
-    literal_token_decl_and_impl!(FloatLiteralToken, f64);
+    impl Representation for StringLiteralToken {
+        fn repr(&self) -> String {
+            format!("\"{}\"", self.value)
+        }
+    }
 
-    literal_token_decl_and_impl!(BoolLiteralToken, bool);
+    #[derive(Debug)]
+    pub struct LiteralToken<T: Debug + Display + Copy> {
+        value: T,
+        location: Location,
+    }
+
+
+    impl<T: Debug + Display + Copy> LiteralToken<T> {
+        pub fn new(value: T, line: u32, column: u32) -> LiteralToken<T> {
+            LiteralToken {
+                value,
+                location: Location { line, column }
+            }
+        }
+
+        pub fn repr(&self) -> String {
+            format!("{}", self.value)
+        }
+
+        pub fn value(&self) -> T { self.value }
+    }
+
+    impl <T: Debug + Display + Copy> Display for LiteralToken<T> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.value)
+        }
+    }
+
+    impl <T: Debug + Display + Copy> AsLocation for LiteralToken<T> {
+        fn as_location(&self) -> &Location {
+            &self.location
+        }
+    }
+
+    impl <T: Debug + Display + Copy> Representation for LiteralToken<T> {
+        fn repr(&self) -> String {
+            format!("{}", self.value)
+        }
+    }
+
+    pub type IntLiteralToken = LiteralToken<i64>;
+    pub type FloatLiteralToken = LiteralToken<f64>;
+    pub type BoolLiteralToken  = LiteralToken<bool>;
 
     #[derive(Debug)]
     pub enum Token {
@@ -340,38 +337,42 @@ mod token {
     #[cfg(test)]
     mod test {
         use super::*;
+        use assert_approx_eq::assert_approx_eq;
 
         #[test]
         fn string_literal_token_properties_return_correct_values() {
             let str_lit = StringLiteralToken::new("Hello".to_string(), 1, 2);
             assert_eq!("Hello", str_lit.value());
             assert_eq!("\"Hello\"", str_lit.repr());
-            assert_eq!(1, str_lit.line(), "line has the wrong value");
-            assert_eq!(2, str_lit.column(), "column has the wrong value");
+            assert_eq!(1, str_lit.as_location().line(), "line has the wrong value");
+            assert_eq!(2, str_lit.as_location().column(), "column has the wrong value");
         }
 
         #[test]
         fn int_literal_token_properties_return_correct_values() {
             let int_lit = IntLiteralToken::new(123, 1, 2);
             assert_eq!(123, int_lit.value());
-            assert_eq!(1, int_lit.line(), "line has wrong value");
-            assert_eq!(2, int_lit.column(), "column has wrong value");
+            assert_eq!("123", int_lit.repr());
+            assert_eq!(1, int_lit.as_location().line(), "line has wrong value");
+            assert_eq!(2, int_lit.as_location().column(), "column has wrong value");
         }
 
         #[test]
         fn float_literal_token_properties_return_correct_values() {
             let float_lit = FloatLiteralToken::new(123.456, 1, 2);
-            assert_eq!(123.456, float_lit.value());
-            assert_eq!(1, float_lit.line(), "line has wrong value");
-            assert_eq!(2, float_lit.column(), "column has wrong value");
+            assert_approx_eq!(123.456, float_lit.value());
+            assert_eq!("123.456", float_lit.repr());
+            assert_eq!(1, float_lit.as_location().line(), "line has wrong value");
+            assert_eq!(2, float_lit.as_location().column(), "column has wrong value");
         }
 
         #[test]
         fn bool_literal_token_properties_return_correct_values() {
             let bool_lit = BoolLiteralToken::new(true, 1, 2);
             assert_eq!(true, bool_lit.value());
-            assert_eq!(1, bool_lit.line(), "line has wrong value");
-            assert_eq!(2, bool_lit.column(), "column has wrong value");
+            assert_eq!("true", bool_lit.repr());
+            assert_eq!(1, bool_lit.as_location().line(), "line has wrong value");
+            assert_eq!(2, bool_lit.as_location().column(), "column has wrong value");
         }
     }
 }
@@ -398,7 +399,7 @@ mod source_segmentation {
         }
     }
 
-    impl <'a>Iterator for SourceSegments<'a> {
+    impl<'a> Iterator for SourceSegments<'a> {
         type Item = SourceCluster<'a>;
 
         fn next(&mut self) -> Option<Self::Item> {
@@ -488,7 +489,6 @@ mod source_segmentation {
 }
 
 mod source_cluster {
-    use std::rc::Rc;
 
     const ALPHA_MASK: u8 = 1;
     const ALPHANUMERIC_MASK: u8 = 1 << 1;
