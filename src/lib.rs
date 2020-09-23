@@ -398,8 +398,8 @@ mod source_segmentation {
         }
     }
 
-    impl Iterator for SourceSegments<'_> {
-        type Item = SourceCluster;
+    impl <'a>Iterator for SourceSegments<'a> {
+        type Item = SourceCluster<'a>;
 
         fn next(&mut self) -> Option<Self::Item> {
             // normalise \r\n to \n
@@ -413,7 +413,7 @@ mod source_segmentation {
 
             self.graphemes.next().map(|cluster| {
                 let result = SourceCluster::new(
-                    normalise_newline(cluster).to_string(),
+                    normalise_newline(cluster),
                     self.line,
                     self.column,
                 );
@@ -499,17 +499,17 @@ mod source_cluster {
     const NEWLINE_MASK: u8 = 1 << 6;
 
     #[derive(Debug)]
-    pub struct SourceCluster {
-        grapheme_cluster: Rc<String>,
+    pub struct SourceCluster<'a> {
+        grapheme_cluster: &'a str,
         column: u32,
         line: u32,
         unicode_characteristics: u8,
     }
 
-    impl SourceCluster {
+    impl SourceCluster<'_> {
         /// Construct a new SourceCluster. The source paramter should be a valid GraphemeCluster as
         /// returned by the unicode_segmentation crate
-        pub fn new(source: String, line: u32, column: u32) -> SourceCluster {
+        pub fn new(source: &str, line: u32, column: u32) -> SourceCluster {
             // only test the first char of the grapheme cluster.
             // uses take(1).fold(...) so that empty clusters have no characteristics
             let unicode_characteristics: u8 = source.chars().take(1).fold(0u8, |mut acc, c| {
@@ -538,7 +538,7 @@ mod source_cluster {
             });
 
             SourceCluster {
-                grapheme_cluster: Rc::new(source),
+                grapheme_cluster: source,
                 column,
                 line,
                 unicode_characteristics,
@@ -610,7 +610,7 @@ mod source_cluster {
         use super::SourceCluster;
 
         fn test_cluster(source: &str) -> SourceCluster {
-            SourceCluster::new(source.to_string(), 0, 0)
+            SourceCluster::new(source, 0, 0)
         }
 
         #[test]
@@ -705,12 +705,12 @@ mod source_cluster {
 
         #[test]
         fn line_returns_the_line_property() {
-            assert_eq!(SourceCluster::new("a".to_string(), 1, 2).line(), 1);
+            assert_eq!(SourceCluster::new("a", 1, 2).line(), 1);
         }
 
         #[test]
         fn column_returns_the_column_property() {
-            assert_eq!(SourceCluster::new("a".to_string(), 1, 2).column(), 2);
+            assert_eq!(SourceCluster::new("a", 1, 2).column(), 2);
         }
 
         #[test]
