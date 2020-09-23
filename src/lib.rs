@@ -112,6 +112,7 @@ mod lexer {
                     cl if cl.is_base10_digit() || cl.cluster() == "-" => {
                         Some(self.numeric_literal(cl))
                     }
+                    cl if cl.is_whitespace() => None,
                     cl => Some(Err(LexerError::new(format!(
                         "Unexpected character: {}",
                         cl.cluster()
@@ -147,59 +148,72 @@ mod lexer {
         use crate::token::*;
         use assert_approx_eq::assert_approx_eq;
 
+        macro_rules! test_token_block {
+            ($token:expr, $ttype:path, $name:ident, $test:block) => {
+                 if let $ttype($name) = $token $test
+                 else {panic!("not a {}", stringify!($ttype))}
+            }
+        }
+
+        macro_rules! test_token {
+            ($token:expr, $ttype:path, $value:expr, $line:expr, $column:expr) => {
+                 test_token_block!($token, $ttype, tkn, {
+                    assert_eq!($value, tkn.value());
+                    assert_eq!($line, tkn.as_location().line());
+                    assert_eq!($column, tkn.as_location().column());
+                 });
+            }
+        }
+
+        macro_rules! test_token_approx {
+            ($token:expr, $ttype:path, $value:expr, $line:expr, $column:expr) => {
+                 test_token_block!($token, $ttype, tkn, {
+                    assert_approx_eq!($value, tkn.value());
+                    assert_eq!($line, tkn.as_location().line());
+                    assert_eq!($column, tkn.as_location().column());
+                 });
+            }
+        }
+
+
         #[test]
         fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
-            match "123".lex().next().expect("no token")? {
-                Token::IntLiteral(tkn) => {
-                    assert_eq!(123, tkn.value());
-                    assert_eq!(1, tkn.as_location().line());
-                    assert_eq!(1, tkn.as_location().column());
-                }
-                _ => panic!("not an IntLiteral"),
-            }
+            test_token!("123".lex().next().expect("no token")?, Token::IntLiteral, 123, 1, 1);
+            Ok(())
+        }
 
+        #[test]
+        fn emits_two_int_literal_tokens() -> result::Result<(), LexerError> {
+            let mut lexer = "123 456".lex();
+            test_token!(lexer.next().expect("no token one")?, Token::IntLiteral, 123, 1, 1);
+            test_token!(lexer.next().expect("no token two")?, Token::IntLiteral, 456, 1, 5);
             Ok(())
         }
 
         #[test]
         fn emits_a_negative_int_literal_token() -> result::Result<(), LexerError> {
-            match "-123".lex().next().expect("no token")? {
-                Token::IntLiteral(tkn) => {
-                    assert_eq!(-123, tkn.value());
-                    assert_eq!(1, tkn.as_location().line());
-                    assert_eq!(1, tkn.as_location().column());
-                }
-                _ => panic!("not an IntLiteral"),
-            }
-
+            test_token!("-123".lex().next().expect("no token")?, Token::IntLiteral, -123, 1, 1);
             Ok(())
         }
 
+
         #[test]
         fn emits_a_float_literal_token() -> result::Result<(), LexerError> {
-            match "123.456".lex().next().expect("no token")? {
-                Token::FloatLiteral(tkn) => {
-                    assert_approx_eq!(123.456, tkn.value());
-                    assert_eq!(1, tkn.as_location().line());
-                    assert_eq!(1, tkn.as_location().column());
-                }
-                _ => panic!("not a float literal"),
-            }
-
+            test_token_approx!("123.456".lex().next().expect("no token")?, Token::FloatLiteral, 123.456, 1, 1);
             Ok(())
         }
 
         #[test]
         fn emits_a_negative_float_literal_token() -> result::Result<(), LexerError> {
-            match "-123.456".lex().next().expect("no token")? {
-                Token::FloatLiteral(tkn) => {
-                    assert_approx_eq!(-123.456, tkn.value());
-                    assert_eq!(1, tkn.as_location().line());
-                    assert_eq!(1, tkn.as_location().column());
-                }
-                _ => panic!("not a float literal"),
-            }
+            test_token_approx!("-123.456".lex().next().expect("no token")?, Token::FloatLiteral, -123.456, 1, 1);
+            Ok(())
+        }
 
+        #[test]
+        fn emits_two_float_literal_tokens() -> result::Result<(), LexerError> {
+            let mut lexer = "12.34 45.67".lex();
+            test_token!(lexer.next().expect("no token one")?, Token::FloatLiteral, 12.34, 1, 1);
+            test_token!(lexer.next().expect("no token two")?, Token::FloatLiteral, 45.67, 1, 7);
             Ok(())
         }
     }
@@ -509,7 +523,6 @@ mod source_segmentation {
 }
 
 mod source_cluster {
-
     const ALPHA_MASK: u8 = 1;
     const ALPHANUMERIC_MASK: u8 = 1 << 1;
     const DIGIT_MASK: u8 = 1 << 2;
