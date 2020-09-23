@@ -59,6 +59,7 @@ mod lexer {
                 ))
             }
         }
+
         fn numeric_literal(&mut self, cl: SourceCluster) -> Result {
             let mut repr = cl.cluster().to_string();
             while let Some(peeked) = self.segments.peek() {
@@ -157,63 +158,109 @@ mod lexer {
 
         macro_rules! test_token {
             ($token:expr, $ttype:path, $value:expr, $line:expr, $column:expr) => {
-                 test_token_block!($token, $ttype, tkn, {
+                test_token_block!($token, $ttype, tkn, {
                     assert_eq!($value, tkn.value());
                     assert_eq!($line, tkn.as_location().line());
                     assert_eq!($column, tkn.as_location().column());
-                 });
-            }
+                });
+            };
         }
 
         macro_rules! test_token_approx {
             ($token:expr, $ttype:path, $value:expr, $line:expr, $column:expr) => {
-                 test_token_block!($token, $ttype, tkn, {
+                test_token_block!($token, $ttype, tkn, {
                     assert_approx_eq!($value, tkn.value());
                     assert_eq!($line, tkn.as_location().line());
                     assert_eq!($column, tkn.as_location().column());
-                 });
-            }
+                });
+            };
         }
-
 
         #[test]
         fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
-            test_token!("123".lex().next().expect("no token")?, Token::IntLiteral, 123, 1, 1);
+            test_token!(
+                "123".lex().next().expect("no token")?,
+                Token::IntLiteral,
+                123,
+                1,
+                1
+            );
             Ok(())
         }
 
         #[test]
         fn emits_two_int_literal_tokens() -> result::Result<(), LexerError> {
             let mut lexer = "123 456".lex();
-            test_token!(lexer.next().expect("no token one")?, Token::IntLiteral, 123, 1, 1);
-            test_token!(lexer.next().expect("no token two")?, Token::IntLiteral, 456, 1, 5);
+            test_token!(
+                lexer.next().expect("no token one")?,
+                Token::IntLiteral,
+                123,
+                1,
+                1
+            );
+            test_token!(
+                lexer.next().expect("no token two")?,
+                Token::IntLiteral,
+                456,
+                1,
+                5
+            );
             Ok(())
         }
 
         #[test]
         fn emits_a_negative_int_literal_token() -> result::Result<(), LexerError> {
-            test_token!("-123".lex().next().expect("no token")?, Token::IntLiteral, -123, 1, 1);
+            test_token!(
+                "-123".lex().next().expect("no token")?,
+                Token::IntLiteral,
+                -123,
+                1,
+                1
+            );
             Ok(())
         }
 
-
         #[test]
         fn emits_a_float_literal_token() -> result::Result<(), LexerError> {
-            test_token_approx!("123.456".lex().next().expect("no token")?, Token::FloatLiteral, 123.456, 1, 1);
+            test_token_approx!(
+                "123.456".lex().next().expect("no token")?,
+                Token::FloatLiteral,
+                123.456,
+                1,
+                1
+            );
             Ok(())
         }
 
         #[test]
         fn emits_a_negative_float_literal_token() -> result::Result<(), LexerError> {
-            test_token_approx!("-123.456".lex().next().expect("no token")?, Token::FloatLiteral, -123.456, 1, 1);
+            test_token_approx!(
+                "-123.456".lex().next().expect("no token")?,
+                Token::FloatLiteral,
+                -123.456,
+                1,
+                1
+            );
             Ok(())
         }
 
         #[test]
         fn emits_two_float_literal_tokens() -> result::Result<(), LexerError> {
             let mut lexer = "12.34 45.67".lex();
-            test_token!(lexer.next().expect("no token one")?, Token::FloatLiteral, 12.34, 1, 1);
-            test_token!(lexer.next().expect("no token two")?, Token::FloatLiteral, 45.67, 1, 7);
+            test_token!(
+                lexer.next().expect("no token one")?,
+                Token::FloatLiteral,
+                12.34,
+                1,
+                1
+            );
+            test_token!(
+                lexer.next().expect("no token two")?,
+                Token::FloatLiteral,
+                45.67,
+                1,
+                7
+            );
             Ok(())
         }
     }
