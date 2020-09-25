@@ -1,13 +1,11 @@
 mod lexer {
     use crate::source_cluster::SourceCluster;
     use crate::source_segmentation::{SourceSegmentation, SourceSegments};
-    use crate::token::{AsLocation, FloatLiteralToken, IntLiteralToken, Token};
+    use crate::token::{FloatLiteralToken, IntLiteralToken, Item, ItemKind, Span};
     use std::convert;
     use std::error;
-    use std::error::Error;
     use std::fmt;
     use std::iter;
-    use std::num;
     use std::num::{ParseFloatError, ParseIntError};
     use std::result;
 
@@ -42,7 +40,7 @@ mod lexer {
 
     impl error::Error for LexerError {}
 
-    type Result = result::Result<Token, LexerError>;
+    type Result = result::Result<Item, LexerError>;
 
     struct Lexer<'a> {
         source: &'a str,
@@ -62,45 +60,58 @@ mod lexer {
 
         fn numeric_literal(&mut self, cl: SourceCluster) -> Result {
             let mut repr = cl.cluster().to_string();
+            let mut end_line = cl.line();
+            let mut end_column = cl.column() + 1;
+
+            let mut update_repr = |sc: SourceCluster| {
+                repr += sc.cluster();
+                end_line = sc.line();
+                end_column = sc.column() + 1;
+            };
+
             while let Some(peeked) = self.segments.peek() {
                 match peeked {
                     pk if pk.is_base10_digit() => {
-                        let sc = self.consume_next()?;
-                        repr += sc.cluster();
+                        update_repr(self.consume_next()?);
                     }
                     pk if pk.cluster() == "." => {
-                        self.consume_next()?;
-                        repr += ".";
-                        return self.float_literal(cl, repr);
+                        update_repr(self.consume_next()?);
+                        return self.float_literal(cl, end_line, end_column, repr);
                     }
                     _ => break,
                 }
             }
 
             let val = repr.parse::<i64>()?;
-            Ok(Token::IntLiteral(IntLiteralToken::new(
-                val,
-                cl.line(),
-                cl.column(),
-            )))
+            Ok(Item::new(
+                Span::new(cl.line(), cl.column(), end_line, end_column),
+                ItemKind::IntLiteral(IntLiteralToken::new(val)),
+            ))
         }
 
-        fn float_literal(&mut self, cl: SourceCluster, mut repr: String) -> Result {
+        fn float_literal(
+            &mut self,
+            start: SourceCluster,
+            mut end_line: u32,
+            mut end_column: u32,
+            mut repr: String,
+        ) -> Result {
             while let Some(peeked) = self.segments.peek() {
                 match peeked {
                     pk if pk.is_base10_digit() => {
                         let sc = self.consume_next()?;
                         repr += sc.cluster();
+                        end_line = sc.line();
+                        end_column = sc.column() + 1;
                     }
                     _ => break,
                 }
             }
             let val = repr.parse::<f64>()?;
-            Ok(Token::FloatLiteral(FloatLiteralToken::new(
-                val,
-                cl.line(),
-                cl.column(),
-            )))
+            Ok(Item::new(
+                Span::new(start.line(), start.column(), end_line, end_column),
+                ItemKind::FloatLiteral(FloatLiteralToken::new(val)),
+            ))
         }
     }
 
@@ -149,29 +160,37 @@ mod lexer {
         use crate::token::*;
         use assert_approx_eq::assert_approx_eq;
 
-        macro_rules! test_token_block {
-            ($token:expr, $ttype:path, $name:ident, $test:block) => {
-                 if let $ttype($name) = $token $test
+        macro_rules! test_token_kind {
+            ($token_kind:expr, $ttype:path, $name:ident, $test:block) => {
+                 if let $ttype($name) = $token_kind $test
                  else {panic!("not a {}", stringify!($ttype))}
             }
         }
 
         macro_rules! test_token {
-            ($token:expr, $ttype:path, $value:expr, $line:expr, $column:expr) => {
-                test_token_block!($token, $ttype, tkn, {
-                    assert_eq!($value, tkn.value());
-                    assert_eq!($line, tkn.as_location().line());
-                    assert_eq!($column, tkn.as_location().column());
+            ($token:expr, $ttype:path, $value:expr, $span:expr) => {
+                let mut item = $token;
+                let sp = $span;
+                assert_eq!(sp.from().line(), item.span().from().line(), "from line has unexpected value");
+                assert_eq!(sp.from().column(), item.span().from().column(), "from column has unexpected value");
+                assert_eq!(sp.to().line(), item.span().to().line(), "to line has unexpected value");
+                assert_eq!(sp.to().column(), item.span().to().column(), "to column has unexpected value");
+                test_token_kind!(item.kind(), $ttype, tkn, {
+                    assert_eq!($value, tkn.value(), "value is unexpected");
                 });
             };
         }
 
         macro_rules! test_token_approx {
-            ($token:expr, $ttype:path, $value:expr, $line:expr, $column:expr) => {
-                test_token_block!($token, $ttype, tkn, {
+            ($token:expr, $ttype:path, $value:expr, $span:expr) => {
+                let mut item = $token;
+                let sp = $span;
+                assert_eq!(sp.from().line(), item.span().from().line(), "from line has unexpected value");
+                assert_eq!(sp.from().column(), item.span().from().column(), "from column has unexpected value");
+                assert_eq!(sp.to().line(), item.span().to().line(), "to line has unexpected value");
+                assert_eq!(sp.to().column(), item.span().to().column(), "to column has unexpected value");
+                test_token_kind!(item.kind(), $ttype, tkn, {
                     assert_approx_eq!($value, tkn.value());
-                    assert_eq!($line, tkn.as_location().line());
-                    assert_eq!($column, tkn.as_location().column());
                 });
             };
         }
@@ -180,10 +199,9 @@ mod lexer {
         fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
             test_token!(
                 "123".lex().next().expect("no token")?,
-                Token::IntLiteral,
+                ItemKind::IntLiteral,
                 123,
-                1,
-                1
+                Span::new(1, 1, 1, 4)
             );
             Ok(())
         }
@@ -193,17 +211,15 @@ mod lexer {
             let mut lexer = "123 456".lex();
             test_token!(
                 lexer.next().expect("no token one")?,
-                Token::IntLiteral,
+                ItemKind::IntLiteral,
                 123,
-                1,
-                1
+                Span::new(1, 1, 1, 4)
             );
             test_token!(
                 lexer.next().expect("no token two")?,
-                Token::IntLiteral,
+                ItemKind::IntLiteral,
                 456,
-                1,
-                5
+                Span::new(1, 5, 1, 8)
             );
             Ok(())
         }
@@ -212,10 +228,9 @@ mod lexer {
         fn emits_a_negative_int_literal_token() -> result::Result<(), LexerError> {
             test_token!(
                 "-123".lex().next().expect("no token")?,
-                Token::IntLiteral,
+                ItemKind::IntLiteral,
                 -123,
-                1,
-                1
+                Span::new(1,1,1,5)
             );
             Ok(())
         }
@@ -224,10 +239,9 @@ mod lexer {
         fn emits_a_float_literal_token() -> result::Result<(), LexerError> {
             test_token_approx!(
                 "123.456".lex().next().expect("no token")?,
-                Token::FloatLiteral,
+                ItemKind::FloatLiteral,
                 123.456,
-                1,
-                1
+                Span::new(1,1,1,8)
             );
             Ok(())
         }
@@ -236,10 +250,9 @@ mod lexer {
         fn emits_a_negative_float_literal_token() -> result::Result<(), LexerError> {
             test_token_approx!(
                 "-123.456".lex().next().expect("no token")?,
-                Token::FloatLiteral,
+                ItemKind::FloatLiteral,
                 -123.456,
-                1,
-                1
+                Span::new(1,1,1,9)
             );
             Ok(())
         }
@@ -249,17 +262,15 @@ mod lexer {
             let mut lexer = "12.34 45.67".lex();
             test_token!(
                 lexer.next().expect("no token one")?,
-                Token::FloatLiteral,
+                ItemKind::FloatLiteral,
                 12.34,
-                1,
-                1
+                Span::new(1,1,1,6)
             );
             test_token!(
                 lexer.next().expect("no token two")?,
-                Token::FloatLiteral,
+                ItemKind::FloatLiteral,
                 45.67,
-                1,
-                7
+                Span::new(1,7,1,12)
             );
             Ok(())
         }
@@ -277,6 +288,9 @@ mod token {
     }
 
     impl Location {
+        pub fn new(line: u32, column: u32) -> Location {
+            Location { line, column }
+        }
         pub fn line(&self) -> u32 {
             self.line
         }
@@ -292,8 +306,53 @@ mod token {
         }
     }
 
-    pub trait AsLocation {
-        fn as_location(&self) -> &Location;
+    #[derive(Debug)]
+    pub struct Span {
+        from: Location,
+        to: Location,
+    }
+
+    impl Span {
+        pub fn new(from_line: u32, from_column: u32, to_line: u32, to_column: u32) -> Span {
+            Span {
+                from: Location::new(from_line, from_column),
+                to: Location::new(to_line, to_column),
+            }
+        }
+
+        pub fn from(&self) -> &Location {
+            &self.from
+        }
+
+        pub fn to(&self) -> &Location {
+            &self.to
+        }
+    }
+
+    impl Display for Span {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "(from: {}, to: {})", self.from, self.to)
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct Item {
+        span: Span,
+        kind: ItemKind,
+    }
+
+    impl Item {
+        pub fn new(span: Span, kind: ItemKind) -> Item {
+            Item { span, kind }
+        }
+
+        pub fn span(&self) -> &Span {
+            &self.span
+        }
+
+        pub fn kind(&self) -> &ItemKind {
+            &self.kind
+        }
     }
 
     pub trait Representation {
@@ -303,25 +362,15 @@ mod token {
     #[derive(Debug)]
     pub struct StringLiteralToken {
         value: String,
-        location: Location,
     }
 
     impl StringLiteralToken {
-        pub fn new(value: String, line: u32, column: u32) -> StringLiteralToken {
-            StringLiteralToken {
-                value,
-                location: Location { line, column },
-            }
+        pub fn new(value: String) -> StringLiteralToken {
+            StringLiteralToken { value }
         }
 
         pub fn value(&self) -> &str {
             &self.value
-        }
-    }
-
-    impl AsLocation for StringLiteralToken {
-        fn as_location(&self) -> &Location {
-            &self.location
         }
     }
 
@@ -334,15 +383,11 @@ mod token {
     #[derive(Debug)]
     pub struct LiteralToken<T: Debug + Display + Copy> {
         value: T,
-        location: Location,
     }
 
     impl<T: Debug + Display + Copy> LiteralToken<T> {
-        pub fn new(value: T, line: u32, column: u32) -> LiteralToken<T> {
-            LiteralToken {
-                value,
-                location: Location { line, column },
-            }
+        pub fn new(value: T) -> LiteralToken<T> {
+            LiteralToken { value }
         }
 
         pub fn repr(&self) -> String {
@@ -360,12 +405,6 @@ mod token {
         }
     }
 
-    impl<T: Debug + Display + Copy> AsLocation for LiteralToken<T> {
-        fn as_location(&self) -> &Location {
-            &self.location
-        }
-    }
-
     impl<T: Debug + Display + Copy> Representation for LiteralToken<T> {
         fn repr(&self) -> String {
             format!("{}", self.value)
@@ -377,7 +416,7 @@ mod token {
     pub type BoolLiteralToken = LiteralToken<bool>;
 
     #[derive(Debug)]
-    pub enum Token {
+    pub enum ItemKind {
         // Literal Types
         StringLiteral(StringLiteralToken),
         IntLiteral(IntLiteralToken),
@@ -418,46 +457,30 @@ mod token {
 
         #[test]
         fn string_literal_token_properties_return_correct_values() {
-            let str_lit = StringLiteralToken::new("Hello".to_string(), 1, 2);
+            let str_lit = StringLiteralToken::new("Hello".to_string());
             assert_eq!("Hello", str_lit.value());
             assert_eq!("\"Hello\"", str_lit.repr());
-            assert_eq!(1, str_lit.as_location().line(), "line has the wrong value");
-            assert_eq!(
-                2,
-                str_lit.as_location().column(),
-                "column has the wrong value"
-            );
         }
 
         #[test]
         fn int_literal_token_properties_return_correct_values() {
-            let int_lit = IntLiteralToken::new(123, 1, 2);
+            let int_lit = IntLiteralToken::new(123);
             assert_eq!(123, int_lit.value());
             assert_eq!("123", int_lit.repr());
-            assert_eq!(1, int_lit.as_location().line(), "line has wrong value");
-            assert_eq!(2, int_lit.as_location().column(), "column has wrong value");
         }
 
         #[test]
         fn float_literal_token_properties_return_correct_values() {
-            let float_lit = FloatLiteralToken::new(123.456, 1, 2);
+            let float_lit = FloatLiteralToken::new(123.456);
             assert_approx_eq!(123.456, float_lit.value());
             assert_eq!("123.456", float_lit.repr());
-            assert_eq!(1, float_lit.as_location().line(), "line has wrong value");
-            assert_eq!(
-                2,
-                float_lit.as_location().column(),
-                "column has wrong value"
-            );
         }
 
         #[test]
         fn bool_literal_token_properties_return_correct_values() {
-            let bool_lit = BoolLiteralToken::new(true, 1, 2);
+            let bool_lit = BoolLiteralToken::new(true);
             assert_eq!(true, bool_lit.value());
             assert_eq!("true", bool_lit.repr());
-            assert_eq!(1, bool_lit.as_location().line(), "line has wrong value");
-            assert_eq!(2, bool_lit.as_location().column(), "column has wrong value");
         }
     }
 }
