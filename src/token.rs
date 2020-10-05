@@ -1,6 +1,7 @@
 use crate::token::ItemKind::Newline;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
+use paste::paste;
 
 #[derive(Debug)]
 /// Location describes a location in the source by line and column
@@ -182,10 +183,12 @@ macro_rules! const_kind_decl {
     ($const_name:ident, $kind_name:ident, $const_val:literal) => {
         pub const $const_name: &str = $const_val;
 
-        /// Kind descriptor for a $kind_name.
-        #[derive(Debug)]
-        pub struct $kind_name {
-            value: &'static str,
+        paste!{
+            #[doc = "Kind descriptor for a " $kind_name "."]
+            #[derive(Debug)]
+            pub struct $kind_name {
+                value: &'static str,
+            }
         }
 
         impl $kind_name {
