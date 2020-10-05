@@ -1,184 +1,373 @@
-// use std::sync;
-//
-// use unicode_segmentation as useg;
-// use useg::UnicodeSegmentation;
-// use crate::source;
-// use crate::token;
-// use std::iter;
+use crate::source_cluster::SourceCluster;
+use crate::source_segmentation::{SourceSegmentation, SourceSegments};
+use crate::token::{FloatLiteralKind, IntLiteralKind, Item, ItemKind, Location, NewlineKind, Span};
+use std::convert;
+use std::error;
+use std::fmt;
+use std::iter;
+use std::num::{ParseFloatError, ParseIntError};
+use std::result;
 
-mod grapheme_clusters;
+#[derive(Debug)]
+pub struct LexerError {
+    reason: String,
+}
 
-// pub struct Error(String);
-//
-// pub type Result = std::result::Result<token::Token, Error>;
-//
-// pub struct Lexer<'a> {
-//     file: sync::Arc<source::File>,
-//     chars: iter::Peekable<useg::Graphemes<'a>>,
-//     line: u64,
-//     column: u64,
-// }
-//
-// struct Char<'a> {
-//     pub ch: &'a str,
-//     pub ln: u64,
-//     pub col: u64,
-// }
-//
-// fn unexpected_char_error(c: Char) -> Error {
-//     Error(format!("Unexpected character {} at line: {} column {}", c.ch, c.ln, c.col))
-// }
-//
-// impl<'a> Lexer<'a> {
-//     pub fn new(file: sync::Arc<source::File>, contents: &'a str) -> Lexer<'a> {
-//         Lexer {
-//             file,
-//             chars: UnicodeSegmentation::graphemes(contents, true).peekable(),
-//             line: 1,
-//             column: 1,
-//         }
-//     }
-//
-//     pub fn line(&self) -> u64 {
-//         self.line
-//     }
-//
-//     pub fn column(&self) -> u64 {
-//         self.column
-//     }
-//
-//     fn next_char(&mut self) -> Option<Char> {
-//         if let Some(c) = self.chars.next() {
-//             let nxt = Char { ch: c, ln: self.line, col: self.column };
-//             if c == "\n" {
-//                 self.line += 1;
-//                 self.column = 1;
-//             }
-//             Some(nxt)
-//         } else {
-//             None
-//         }
-//     }
-//
-//     // TODO: Can probably use match self.chars.peek better than if let because can match None and Some("/") etc
-//     // fn consume_line(&mut self) {
-//     //     while let Some(peek) = self.chars.peek() {
-//     //         if peek == "/n" {
-//     //             self.next_char()
-//     //             break
-//     //         }
-//     //         if peek == "/r" {
-//     //             self.consume_line_feed()
-//     //         }
-//     //         self.next_char();
-//     //     }
-//     // }
-//     //
-//     // TODO: Can probably use match self.chars.peek better than if let because can match None and Some("/") etc
-//     // fn consume_line_feeds(&mut self) {
-//     //     if let Some(peek) = self.chars.peek() {
-//     //         if peek == "\n" {
-//     //             self.next_char();
-//     //         }
-//     //     }
-//     // }
-//
-//     // TODO: Can probably use match self.chars.peek better than if let because can match None and Some("/") etc
-//     // fn maybe_doc_comment_tkn(&mut self, c: Char, f: sync::Arc<source::File>) -> Option<Result> {
-//     //     let mut buffer: String = c.ch.to_string();
-//     //     if let Some(peek) = self.chars.peek() {
-//     //         if peek == "/" {
-//     //             buffer += self.next_char().unwrap().ch;
-//     //             return if let Some(peek) = self.chars.peek() {
-//     //                 if peek == "/" {
-//     //                     // this is a doc comment. read it to the buffer and return it
-//     //                     while let Some(peek) = self.chars.peek() {
-//     //                         if peek == "\n" {
-//     //                             self.next_char();
-//     //                             break;
-//     //                         } else if peak == "\r" {
-//     //                             self.next_char();
-//     //                             self.consume_line_feed();
-//     //                             break;
-//     //                         }
-//     //                         buffer += self.next_char().unwrap().ch;
-//     //                     }
-//     //                     Some(Ok(token::Token::new(token::Type::DocComment, f, c.ln, c.col, buffer)))
-//     //                 } else {
-//     //                     // This is an ordinary comment. Consume the rest of the line and return None
-//     //                     self.consume_line();
-//     //                     None
-//     //                 }
-//     //             } else {
-//     //                 // The file is ended
-//     //                 None
-//     //             }
-//     //         }
-//     //         else {
-//     //             let next = self.next_char().unwrap();
-//     //             return Some(Err(unexpected_char_error(next)))
-//     //         }
-//     //     }
-//     //     None
-//     // }
-// }
-//
-// fn bang_tkn(c: Char, f: sync::Arc<source::File>) -> Option<Result> {
-//     Some(Ok(token::Token::new(token::Type::Bang, f, c.ln, c.col, c.ch.to_string())))
-// }
-//
-//
-// impl Iterator for Lexer<'_> {
-//     type Item = Result;
-//
-//     fn next(&mut self) -> Option<Self::Item> {
-//         let file = self.file.clone();
-//         while let Some(nxt) = self.next_char() {
-//             match nxt.ch {
-//                 "!" => return bang_tkn(nxt, file),
-//                 _ => return None // TODO Nope!
-//             }
-//         }
-//         None
-//     }
-// }
-//
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use std::error;
-//     use std::result;
-//     use std::sync;
-//
-//     // fn create_file(contents: &str, path: &str) -> sync::Arc<source::File> {
-//     //     sync::Arc::new(source::File::new_from_string(contents.to_string(), path.to_string()).expect("error creating file"))
-//     // }
-//     //
-//     // fn create_lexer(file: &sync::Arc<source::File>) -> Lexer {
-//     //     Lexer::new(file.clone(), file.contents())
-//     // }
-//
-//     // #[test]
-//     // fn test_new() {
-//     //     let f = create_file("contents", "the/file/path");
-//     //     let l = create_lexer(&f);
-//     //     assert_eq!(l.line(), 1, "l.line() is incorrect");
-//     //     assert_eq!(l.column(), 1, "l.column() is incorrect");
-//     // }
-//     //
-//     // #[test]
-//     // fn test_lex_bang() {
-//     //     let f = create_file("!", "path");
-//     //     let mut l = create_lexer(&f);
-//     //     if let Some(Ok(tkn)) = l.next() {
-//     //         assert_eq!(tkn.token_type(), token::Type::Bang);
-//     //         assert_eq!(tkn.line(), 1);
-//     //         assert_eq!(tkn.column(), 1);
-//     //     } else {
-//     //         assert!(false, "not some ok token")
-//     //     }
-//     // }
-//
-//     // fn test_bang()
-// }
+/// ParseIntError can be returned when parsing an IntegerLiteral value
+impl convert::From<ParseIntError> for LexerError {
+    fn from(e: ParseIntError) -> Self {
+        LexerError::new(e.to_string())
+    }
+}
 
+/// ParseFloatError can be returned when parsing a FloatLiteral value
+impl convert::From<ParseFloatError> for LexerError {
+    fn from(e: ParseFloatError) -> Self {
+        LexerError::new(e.to_string())
+    }
+}
+
+impl LexerError {
+    fn new(reason: String) -> LexerError {
+        LexerError { reason }
+    }
+}
+
+impl fmt::Display for LexerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "LexerError: {}", self.reason)
+    }
+}
+
+impl error::Error for LexerError {}
+
+type Result = result::Result<Item, LexerError>;
+
+pub struct Lexer<'a> {
+    source: &'a str,
+    segments: iter::Peekable<SourceSegments<'a>>,
+}
+
+/// extend the span to include the location of the provided source cluster
+#[inline]
+fn extend_span(span: &mut Span, source_cluster: &SourceCluster) {
+    span.set_to(Location::new(
+        source_cluster.line(),
+        source_cluster.column() + 1,
+    ));
+}
+
+impl Lexer<'_> {
+    /// Take the next value from the iterator of source clusters and return it, or
+    /// an error if there is no next value available
+    fn consume_next(&mut self) -> result::Result<SourceCluster, LexerError> {
+        if let Some(sc) = self.segments.next() {
+            Ok(sc)
+        } else {
+            Err(LexerError::new(
+                "unexpected EOF in segment stream".to_string(),
+            ))
+        }
+    }
+
+    /// Return an Item whose kind is either IntLiteral or FloatLiteral, or an error
+    fn numeric_literal(&mut self, cl: SourceCluster) -> Result {
+        let mut repr = String::new();
+        // the correct to location is set when update_repr is called.
+        let mut span = Span::new(cl.line(), cl.column(), 0, 0);
+
+        let mut update_repr = |sc: SourceCluster| {
+            repr += sc.cluster();
+            extend_span(&mut span, &sc);
+        };
+
+        update_repr(cl);
+
+        while let Some(peeked) = self.segments.peek() {
+            match peeked {
+                pk if pk.is_base10_digit() => {
+                    update_repr(self.consume_next()?);
+                }
+                pk if pk.cluster() == "." => {
+                    update_repr(self.consume_next()?);
+                    return self.float_literal(repr, span);
+                }
+                _ => break,
+            }
+        }
+
+        let val = repr.parse::<i64>()?;
+        Ok(Item::new(
+            span,
+            ItemKind::IntLiteral(IntLiteralKind::new(val)),
+        ))
+    }
+
+    /// return an Item whose kind is FloatLiteral, or an error.
+    fn float_literal(&mut self, mut repr: String, mut span: Span) -> Result {
+        while let Some(peeked) = self.segments.peek() {
+            match peeked {
+                pk if pk.is_base10_digit() => {
+                    let sc = self.consume_next()?;
+                    repr += sc.cluster();
+                    extend_span(&mut span, &sc);
+                }
+                _ => break,
+            }
+        }
+        let val = repr.parse::<f64>()?;
+        Ok(Item::new(
+            span,
+            ItemKind::FloatLiteral(FloatLiteralKind::new(val)),
+        ))
+    }
+
+    /// return an item whose kind is Newline.
+    /// Consumes all consecutive newlines and whitespace following the initial newline
+    fn newline(&mut self, cl: SourceCluster) -> Result {
+        let span = Span::new(cl.line(), cl.column(), cl.line(), cl.column() + 1);
+        let item = Item::new(span, ItemKind::Newline(NewlineKind::new()));
+        while let Some(peeked) = self.segments.peek() {
+            match peeked {
+                pk if pk.is_whitespace() => {
+                    self.consume_next()?;
+                }
+                _ => break,
+            }
+        }
+        Ok(item)
+    }
+}
+
+/// Iterator produces a stream of token::Item's by consuming the internal
+/// iterator over SourceClusters
+impl Iterator for Lexer<'_> {
+    type Item = Result;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(cluster) = self.segments.next() {
+            let maybe_result = match cluster {
+                cl if cl.is_base10_digit() || cl.cluster() == "-" => Some(self.numeric_literal(cl)),
+                cl if cl.is_newline() => Some(self.newline(cl)),
+                cl if cl.is_whitespace() => None,
+                cl => Some(Err(LexerError::new(format!(
+                    "Unexpected character: {}",
+                    cl.cluster()
+                )))),
+            };
+
+            // if maybe_result is none, then we do not wish to emit the result of this loop
+            // and should continue
+            if let Some(result) = maybe_result {
+                return Some(result);
+            }
+        }
+        None
+    }
+}
+
+/// Implemented by items which can produce a lexer iterator
+/// (used to add the lex extension function to an &str
+trait Lexing {
+    fn lex(&self) -> Lexer;
+}
+
+/// Lexing implementation for &str
+impl Lexing for &str {
+    fn lex(&self) -> Lexer {
+        Lexer {
+            source: self,
+            segments: self.source_clusters().peekable(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::token::*;
+    use assert_approx_eq::assert_approx_eq;
+
+    macro_rules! test_token_value {
+            ($token_kind:expr, $ttype:path, $name:ident, $test:block) => {
+                 if let $ttype($name) = $token_kind $test
+                 else {panic!("not a {}", stringify!($ttype))}
+            }
+        }
+
+    macro_rules! test_token_span {
+        ($token:expr, $span:expr) => {
+            let item = $token;
+            let sp = $span;
+            assert_eq!(
+                sp.from().line(),
+                item.span().from().line(),
+                "from line has unexpected value"
+            );
+            assert_eq!(
+                sp.from().column(),
+                item.span().from().column(),
+                "from column has unexpected value"
+            );
+            assert_eq!(
+                sp.to().line(),
+                item.span().to().line(),
+                "to line has unexpected value"
+            );
+            assert_eq!(
+                sp.to().column(),
+                item.span().to().column(),
+                "to column has unexpected value"
+            );
+        };
+    }
+
+    macro_rules! test_value_token {
+        ($token:expr, $ttype:path, $value:expr, $span:expr) => {
+            let item = $token;
+            let sp = $span;
+            test_token_span!(&item, &sp);
+            test_token_value!(item.kind(), $ttype, knd, {
+                assert_eq!($value, knd.value(), "value is unexpected");
+            });
+        };
+    }
+
+    macro_rules! test_value_token_approx {
+        ($token:expr, $ttype:path, $value:expr, $span:expr) => {
+            let item = $token;
+            let sp = $span;
+            test_token_span!(&item, &sp);
+            test_token_value!(item.kind(), $ttype, knd, {
+                assert_approx_eq!($value, knd.value());
+            });
+        };
+    }
+
+    macro_rules! test_const_token {
+        ($token:expr, $ttype:path, $const_val:expr, $span:expr) => {
+            let item = $token;
+            let sp = $span;
+            test_token_span!(&item, &sp);
+            test_token_value!(item.kind(), $ttype, knd, {
+                assert_eq!($const_val, knd.value());
+            })
+        };
+    }
+
+    #[test]
+    fn emits_an_int_literal_token() -> result::Result<(), LexerError> {
+        test_value_token!(
+            "123".lex().next().expect("no token")?,
+            ItemKind::IntLiteral,
+            123,
+            Span::new(1, 1, 1, 4)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emits_two_int_literal_tokens() -> result::Result<(), LexerError> {
+        let mut lexer = "123 456".lex();
+        test_value_token!(
+            lexer.next().expect("no token one")?,
+            ItemKind::IntLiteral,
+            123,
+            Span::new(1, 1, 1, 4)
+        );
+        test_value_token!(
+            lexer.next().expect("no token two")?,
+            ItemKind::IntLiteral,
+            456,
+            Span::new(1, 5, 1, 8)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emits_a_negative_int_literal_token() -> result::Result<(), LexerError> {
+        test_value_token!(
+            "-123".lex().next().expect("no token")?,
+            ItemKind::IntLiteral,
+            -123,
+            Span::new(1, 1, 1, 5)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emits_a_float_literal_token() -> result::Result<(), LexerError> {
+        test_value_token_approx!(
+            "123.456".lex().next().expect("no token")?,
+            ItemKind::FloatLiteral,
+            123.456,
+            Span::new(1, 1, 1, 8)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emits_a_negative_float_literal_token() -> result::Result<(), LexerError> {
+        test_value_token_approx!(
+            "-123.456".lex().next().expect("no token")?,
+            ItemKind::FloatLiteral,
+            -123.456,
+            Span::new(1, 1, 1, 9)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emits_two_float_literal_tokens() -> result::Result<(), LexerError> {
+        let mut lexer = "12.34 45.67".lex();
+        test_value_token!(
+            lexer.next().expect("no token one")?,
+            ItemKind::FloatLiteral,
+            12.34,
+            Span::new(1, 1, 1, 6)
+        );
+        test_value_token!(
+            lexer.next().expect("no token two")?,
+            ItemKind::FloatLiteral,
+            45.67,
+            Span::new(1, 7, 1, 12)
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn consumes_leading_whitespace() {
+        unimplemented!()
+    }
+
+    #[test]
+    fn emits_newline_tokens() -> result::Result<(), LexerError> {
+        let mut lexer = "123\n".lex();
+        // ignore the first token, it is only there so the lexer doesn't consume it as a leading newline
+        lexer.next().expect("no first token")?;
+        test_const_token!(
+            lexer.next().expect("no newline token")?,
+            ItemKind::Newline,
+            "\n",
+            Span::new(1, 4, 1, 5)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn emits_only_a_single_newline_for_many_consecutive_newlines() -> result::Result<(), LexerError>
+    {
+        let mut lexer = "123\n \t \n\n".lex();
+        // ignore the first token, it is only there so the lexer doesn't consume it as a leading newline
+        lexer.next().expect("no first token")?;
+        test_const_token!(
+            lexer.next().expect("no newline token")?,
+            ItemKind::Newline,
+            "\n",
+            Span::new(1, 4, 1, 5)
+        );
+        assert!(lexer.next().is_none(), "extra whitespace was not consumed");
+        Ok(())
+    }
+}
