@@ -122,6 +122,7 @@ impl Item {
             ItemKind::FloatLiteral(ref knd) => knd.repr(),
             ItemKind::BoolLiteral(ref knd) => knd.repr(),
             ItemKind::Newline(ref knd) => knd.repr(),
+            ItemKind::Bang(ref knd) => knd.repr(),
         }
     }
 }
@@ -176,26 +177,27 @@ pub type IntLiteralKind = LiteralKind<i64>;
 pub type FloatLiteralKind = LiteralKind<f64>;
 pub type BoolLiteralKind = LiteralKind<bool>;
 
-/// Kind descriptor for a kind whose contents are a const string (keywords, punctuation etc)
-#[derive(Debug)]
-pub struct ConstKind {
-    value: &'static str,
-}
-
-impl ConstKind {
-    pub fn value(&self) -> &str {
-        self.value
-    }
-
-    pub fn repr(&self) -> String {
-        self.value().to_string()
-    }
-}
 
 macro_rules! const_kind_decl {
     ($const_name:ident, $kind_name:ident, $const_val:literal) => {
         pub const $const_name: &str = $const_val;
-        pub type $kind_name = ConstKind;
+
+        /// Kind descriptor for a $kind_name.
+        #[derive(Debug)]
+        pub struct $kind_name {
+            value: &'static str,
+        }
+
+        impl $kind_name {
+            pub fn value(&self) -> &str {
+                self.value
+            }
+
+            pub fn repr(&self) -> String {
+                self.value().to_string()
+            }
+        }
+
         impl $kind_name {
             pub fn new() -> $kind_name {
                 $kind_name {
@@ -207,7 +209,25 @@ macro_rules! const_kind_decl {
 }
 
 const_kind_decl!(NEWLINE_REPR, NewlineKind, "\n");
-
+const_kind_decl!(BANG_REPR, BangKind, "!");
+// const_kind_decl!(COLON_REPR, ColonKind, ":");
+// const_kind_decl!(QMARK_REPR, QMarkKind, "?");
+// const_kind_decl!(LBRACE_REPR, LBraceKind, "{");
+// const_kind_decl!(RBRACE_REPR, RBraceKind, "}");
+// const_kind_decl!(LBRACKET_REPR, LBracketKind, "[");
+// const_kind_decl!(RBRACKET_REPR, RBracketKind, "]");
+// const_kind_decl!(LPAREN_REPR, LParenKind, "(");
+// const_kind_decl!(RPAREN_REPR, RParenKind, ")");
+// const_kind_decl!(AT_REPR, AtKind, "@");
+// const_kind_decl!(MESSAGE_REPR, MessageKind, "message");
+// const_kind_decl!(LIST_REPR, ListKind, "list");
+// const_kind_decl!(MAP_REPR, MapKind, "map");
+// const_kind_decl!(SERVICE_REPR, ServiceKind, "service");
+// const_kind_decl!(FLOAT_KW_REPR, FloatKeywordKind, "float");
+// const_kind_decl!(INT_KW_REPR, IntKeywordKind, "int");
+// const_kind_decl!(BOOL_KW_REPR, BoolKeywordKind, "bool");
+// const_kind_decl!(STRING_KW_REPR, StringKeywordKind, "string");
+// const_kind_decl!(TIME_KW_REPR, TimeKeywordKind, "time");
 
 #[derive(Debug)]
 pub enum ItemKind {
@@ -218,8 +238,8 @@ pub enum ItemKind {
     BoolLiteral(BoolLiteralKind),
     // Comment Types
     // DocComment,
-    // // Punctuation
-    // Bang,
+    // Punctuation
+    Bang(BangKind),
     // Colon,
     // QMark,
     // LBrace,
@@ -248,6 +268,7 @@ pub enum ItemKind {
 mod test {
     use super::*;
     use assert_approx_eq::assert_approx_eq;
+    use paste::paste;
 
     fn testable_span() -> Span {
         Span::new(0, 1, 2, 3)
@@ -268,6 +289,27 @@ mod test {
                 }
             }
         }
+
+    macro_rules! test_const_kind {
+        ($kind_enum:ident, $kind_name:ident, $kind_repr:ident) => {
+            paste! {
+                #[test]
+                fn [<$kind_name:lower _properties_return_correct_values>]() {
+                    let tkn = Item::new(testable_span(), ItemKind::$kind_enum($kind_name::new()));
+                    test_span(tkn.span());
+                    assert_eq!($kind_repr, tkn.repr());
+                    test_token_kind!(tkn, ItemKind::$kind_enum, knd, {
+                        assert_eq!($kind_repr, knd.value());
+                    });
+                }
+            }
+
+        }
+    }
+
+    test_const_kind!(Newline, NewlineKind, NEWLINE_REPR);
+
+    test_const_kind!(Bang, BangKind, BANG_REPR);
 
     #[test]
     fn string_literal_token_properties_return_correct_values() {
@@ -323,13 +365,14 @@ mod test {
         });
     }
 
-    #[test]
-    fn newline_token_properties_return_correct_values() {
-        let newline_tkn = Item::new(testable_span(), ItemKind::Newline(NewlineKind::new()));
-        test_span(newline_tkn.span());
-        assert_eq!(NEWLINE_REPR, newline_tkn.repr());
-        test_token_kind!(newline_tkn, ItemKind::Newline, tkn, {
-            assert_eq!(NEWLINE_REPR, tkn.value());
-        });
-    }
+    // #[test]
+    // fn newline_token_properties_return_correct_values() {
+    //     let newline_tkn = Item::new(testable_span(), ItemKind::Newline(NewlineKind::new()));
+    //     test_span(newline_tkn.span());
+    //     assert_eq!(NEWLINE_REPR, newline_tkn.repr());
+    //     test_token_kind!(newline_tkn, ItemKind::Newline, tkn, {
+    //         assert_eq!(NEWLINE_REPR, tkn.value());
+    //     });
+    // }
+
 }
