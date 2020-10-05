@@ -356,7 +356,7 @@ mod test {
     }
 
     #[test]
-    fn emits_only_a_single_newline_for_many_consecutive_newlines() -> result::Result<(), LexerError>
+    fn emits_only_a_single_newline_for_consecutive_newlines_and_whitespace() -> result::Result<(), LexerError>
     {
         let mut lexer = "123\n \t \n\n".lex();
         // ignore the first token, it is only there so the lexer doesn't consume it as a leading newline

@@ -192,18 +192,22 @@ impl ConstKind {
     }
 }
 
-const NEWLINE_REPR: &str = "\n";
-
-/// Kind descriptor for a newline
-pub type NewlineKind = ConstKind;
-
-impl NewlineKind {
-    pub fn new() -> NewlineKind {
-        NewlineKind {
-            value: NEWLINE_REPR,
+macro_rules! const_kind_decl {
+    ($const_name:ident, $kind_name:ident, $const_val:literal) => {
+        pub const $const_name: &str = $const_val;
+        pub type $kind_name = ConstKind;
+        impl $kind_name {
+            pub fn new() -> $kind_name {
+                $kind_name {
+                    value: $const_name,
+                }
+            }
         }
     }
 }
+
+const_kind_decl!(NEWLINE_REPR, NewlineKind, "\n");
+
 
 #[derive(Debug)]
 pub enum ItemKind {
