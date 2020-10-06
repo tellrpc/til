@@ -1,6 +1,6 @@
+use paste::paste;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
-use paste::paste;
 
 #[derive(Debug)]
 /// Location describes a location in the source by line and column
@@ -195,12 +195,11 @@ pub type IntLiteralKind = LiteralKind<i64>;
 pub type FloatLiteralKind = LiteralKind<f64>;
 pub type BoolLiteralKind = LiteralKind<bool>;
 
-
 macro_rules! const_kind_decl {
     ($const_name:ident, $kind_name:ident, $const_val:literal) => {
         pub const $const_name: &str = $const_val;
 
-        paste!{
+        paste! {
             #[doc = "Kind descriptor for a " $kind_name "."]
             #[derive(Debug)]
             pub struct $kind_name {
@@ -220,12 +219,10 @@ macro_rules! const_kind_decl {
 
         impl $kind_name {
             pub fn new() -> $kind_name {
-                $kind_name {
-                    value: $const_name,
-                }
+                $kind_name { value: $const_name }
             }
         }
-    }
+    };
 }
 
 const_kind_decl!(NEWLINE_REPR, NewlineKind, "\n");
@@ -323,8 +320,7 @@ mod test {
                     });
                 }
             }
-
-        }
+        };
     }
 
     test_const_kind!(Newline, NewlineKind, NEWLINE_REPR);
@@ -411,5 +407,4 @@ mod test {
     //         assert_eq!(NEWLINE_REPR, tkn.value());
     //     });
     // }
-
 }

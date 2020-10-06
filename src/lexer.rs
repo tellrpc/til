@@ -175,9 +175,19 @@ trait Lexing {
 /// Lexing implementation for &str
 impl Lexing for &str {
     fn lex(&self) -> Lexer {
+        let mut clusters = self.source_clusters().peekable();
+
+        // consume all leading whitespace
+        while let Some(sc) = clusters.peek() {
+            if !sc.is_whitespace() {
+                break;
+            }
+            clusters.next();
+        }
+
         Lexer {
             source: self,
-            segments: self.source_clusters().peekable(),
+            segments: clusters,
         }
     }
 }
@@ -336,9 +346,15 @@ mod test {
     }
 
     #[test]
-    #[ignore]
-    fn consumes_leading_whitespace() {
-        unimplemented!()
+    fn consumes_leading_whitespace() -> result::Result<(), LexerError> {
+        let mut lexer = "\n \t\n  123".lex();
+        test_value_token!(
+            lexer.next().expect("no 123 token")?,
+            ItemKind::IntLiteral,
+            123,
+            Span::new(3, 3, 3, 6)
+        );
+        Ok(())
     }
 
     #[test]
@@ -356,8 +372,8 @@ mod test {
     }
 
     #[test]
-    fn emits_only_a_single_newline_for_consecutive_newlines_and_whitespace() -> result::Result<(), LexerError>
-    {
+    fn emits_only_a_single_newline_for_consecutive_newlines_and_whitespace(
+    ) -> result::Result<(), LexerError> {
         let mut lexer = "123\n \t \n\n".lex();
         // ignore the first token, it is only there so the lexer doesn't consume it as a leading newline
         lexer.next().expect("no first token")?;
