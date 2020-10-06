@@ -1,4 +1,3 @@
-use crate::token::ItemKind::Newline;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use paste::paste;
@@ -124,6 +123,24 @@ impl Item {
             ItemKind::BoolLiteral(ref knd) => knd.repr(),
             ItemKind::Newline(ref knd) => knd.repr(),
             ItemKind::Bang(ref knd) => knd.repr(),
+            ItemKind::Colon(ref knd) => knd.repr(),
+            ItemKind::QMark(ref knd) => knd.repr(),
+            ItemKind::LBrace(ref knd) => knd.repr(),
+            ItemKind::RBrace(ref knd) => knd.repr(),
+            ItemKind::LBracket(ref knd) => knd.repr(),
+            ItemKind::RBracket(ref knd) => knd.repr(),
+            ItemKind::LParen(ref knd) => knd.repr(),
+            ItemKind::RParen(ref knd) => knd.repr(),
+            ItemKind::At(ref knd) => knd.repr(),
+            ItemKind::MessageKeyword(ref knd) => knd.repr(),
+            ItemKind::ListKeyword(ref knd) => knd.repr(),
+            ItemKind::MapKeyword(ref knd) => knd.repr(),
+            ItemKind::ServiceKeyword(ref knd) => knd.repr(),
+            ItemKind::FloatKeyword(ref knd) => knd.repr(),
+            ItemKind::IntKeyword(ref knd) => knd.repr(),
+            ItemKind::BoolKeyword(ref knd) => knd.repr(),
+            ItemKind::StringKeyword(ref knd) => knd.repr(),
+            ItemKind::TimeKeyword(ref knd) => knd.repr(),
         }
     }
 }
@@ -213,24 +230,24 @@ macro_rules! const_kind_decl {
 
 const_kind_decl!(NEWLINE_REPR, NewlineKind, "\n");
 const_kind_decl!(BANG_REPR, BangKind, "!");
-// const_kind_decl!(COLON_REPR, ColonKind, ":");
-// const_kind_decl!(QMARK_REPR, QMarkKind, "?");
-// const_kind_decl!(LBRACE_REPR, LBraceKind, "{");
-// const_kind_decl!(RBRACE_REPR, RBraceKind, "}");
-// const_kind_decl!(LBRACKET_REPR, LBracketKind, "[");
-// const_kind_decl!(RBRACKET_REPR, RBracketKind, "]");
-// const_kind_decl!(LPAREN_REPR, LParenKind, "(");
-// const_kind_decl!(RPAREN_REPR, RParenKind, ")");
-// const_kind_decl!(AT_REPR, AtKind, "@");
-// const_kind_decl!(MESSAGE_REPR, MessageKind, "message");
-// const_kind_decl!(LIST_REPR, ListKind, "list");
-// const_kind_decl!(MAP_REPR, MapKind, "map");
-// const_kind_decl!(SERVICE_REPR, ServiceKind, "service");
-// const_kind_decl!(FLOAT_KW_REPR, FloatKeywordKind, "float");
-// const_kind_decl!(INT_KW_REPR, IntKeywordKind, "int");
-// const_kind_decl!(BOOL_KW_REPR, BoolKeywordKind, "bool");
-// const_kind_decl!(STRING_KW_REPR, StringKeywordKind, "string");
-// const_kind_decl!(TIME_KW_REPR, TimeKeywordKind, "time");
+const_kind_decl!(COLON_REPR, ColonKind, ":");
+const_kind_decl!(QMARK_REPR, QMarkKind, "?");
+const_kind_decl!(LBRACE_REPR, LBraceKind, "{");
+const_kind_decl!(RBRACE_REPR, RBraceKind, "}");
+const_kind_decl!(LBRACKET_REPR, LBracketKind, "[");
+const_kind_decl!(RBRACKET_REPR, RBracketKind, "]");
+const_kind_decl!(LPAREN_REPR, LParenKind, "(");
+const_kind_decl!(RPAREN_REPR, RParenKind, ")");
+const_kind_decl!(AT_REPR, AtKind, "@");
+const_kind_decl!(MESSAGE_KW_REPR, MessageKeywordKind, "message");
+const_kind_decl!(LIST_KW_REPR, ListKeywordKind, "list");
+const_kind_decl!(MAP_KW_REPR, MapKeywordKind, "map");
+const_kind_decl!(SERVICE_KW_REPR, ServiceKeywordKind, "service");
+const_kind_decl!(FLOAT_KW_REPR, FloatKeywordKind, "float");
+const_kind_decl!(INT_KW_REPR, IntKeywordKind, "int");
+const_kind_decl!(BOOL_KW_REPR, BoolKeywordKind, "bool");
+const_kind_decl!(STRING_KW_REPR, StringKeywordKind, "string");
+const_kind_decl!(TIME_KW_REPR, TimeKeywordKind, "time");
 
 #[derive(Debug)]
 pub enum ItemKind {
@@ -243,25 +260,25 @@ pub enum ItemKind {
     // DocComment,
     // Punctuation
     Bang(BangKind),
-    // Colon,
-    // QMark,
-    // LBrace,
-    // RBrace,
-    // LBracket,
-    // RBracket,
-    // LParen,
-    // RParen,
-    // At,
-    // // Keywords
-    // MessageKeyword,
-    // ListKeyword,
-    // MapKeyword,
-    // ServiceKeyword,
-    // FloatKeyword,
-    // IntKeyword,
-    // BoolKeyword,
-    // StringKeyword,
-    // TimeKeyword,
+    Colon(ColonKind),
+    QMark(QMarkKind),
+    LBrace(LBraceKind),
+    RBrace(RBraceKind),
+    LBracket(LBracketKind),
+    RBracket(RBracketKind),
+    LParen(LParenKind),
+    RParen(RParenKind),
+    At(AtKind),
+    // Keywords
+    MessageKeyword(MessageKeywordKind),
+    ListKeyword(ListKeywordKind),
+    MapKeyword(MapKeywordKind),
+    ServiceKeyword(ServiceKeywordKind),
+    FloatKeyword(FloatKeywordKind),
+    IntKeyword(IntKeywordKind),
+    BoolKeyword(BoolKeywordKind),
+    StringKeyword(StringKeywordKind),
+    TimeKeyword(TimeKeywordKind),
     //Whitespace
     Newline(NewlineKind),
     // EOF,
@@ -311,8 +328,25 @@ mod test {
     }
 
     test_const_kind!(Newline, NewlineKind, NEWLINE_REPR);
-
     test_const_kind!(Bang, BangKind, BANG_REPR);
+    test_const_kind!(Colon, ColonKind, COLON_REPR);
+    test_const_kind!(QMark, QMarkKind, QMARK_REPR);
+    test_const_kind!(LBrace, LBraceKind, LBRACE_REPR);
+    test_const_kind!(RBrace, RBraceKind, RBRACE_REPR);
+    test_const_kind!(LBracket, LBracketKind, LBRACKET_REPR);
+    test_const_kind!(RBracket, RBracketKind, RBRACKET_REPR);
+    test_const_kind!(LParen, LParenKind, LPAREN_REPR);
+    test_const_kind!(RParen, RParenKind, RPAREN_REPR);
+    test_const_kind!(At, AtKind, AT_REPR);
+    test_const_kind!(MessageKeyword, MessageKeywordKind, MESSAGE_KW_REPR);
+    test_const_kind!(ListKeyword, ListKeywordKind, LIST_KW_REPR);
+    test_const_kind!(MapKeyword, MapKeywordKind, MAP_KW_REPR);
+    test_const_kind!(ServiceKeyword, ServiceKeywordKind, SERVICE_KW_REPR);
+    test_const_kind!(FloatKeyword, FloatKeywordKind, FLOAT_KW_REPR);
+    test_const_kind!(IntKeyword, IntKeywordKind, INT_KW_REPR);
+    test_const_kind!(BoolKeyword, BoolKeywordKind, BOOL_KW_REPR);
+    test_const_kind!(StringKeyword, StringKeywordKind, STRING_KW_REPR);
+    test_const_kind!(TimeKeyword, TimeKeywordKind, TIME_KW_REPR);
 
     #[test]
     fn string_literal_token_properties_return_correct_values() {

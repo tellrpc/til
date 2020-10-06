@@ -1,5 +1,5 @@
-pub mod lexer;
-pub mod token;
+mod lexer;
+mod token;
 
 mod source_segmentation {
     use crate::source_cluster::SourceCluster;
